@@ -25,7 +25,7 @@ export default function Financeiro() {
   async function fetchTudo() {
     setLoading(true)
     const [tRes, cRes, clRes] = await Promise.all([
-      supabase.from('transactions').select('*, clients(razao_social)').order('due_date', { ascending: false }),
+      supabase.from('financial_transactions').select('*, clients(razao_social)').order('due_date', { ascending: false }),
       supabase.from('bank_accounts').select('*').order('name'),
       supabase.from('clients').select('id, razao_social').order('razao_social'),
     ])
@@ -42,7 +42,7 @@ export default function Financeiro() {
 
   async function salvarTransacao(e) {
     e.preventDefault(); setSaving(true)
-    await supabase.from('transactions').insert({ ...form, amount: Number(form.amount) })
+    await supabase.from('financial_transactions').insert({ ...form, amount: Number(form.amount) })
     setSaving(false); setShowModal(false)
     setForm({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '' })
     fetchTudo()
@@ -57,7 +57,7 @@ export default function Financeiro() {
   }
 
   async function alterarStatus(id, status) {
-    await supabase.from('transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    await supabase.from('financial_transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
     setTransacoes(ts => ts.map(t => t.id === id ? { ...t, status } : t))
   }
 
