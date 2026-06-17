@@ -16,8 +16,8 @@ export default function Financeiro() {
   const [showModal, setShowModal] = useState(false)
   const [showContaModal, setShowContaModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '' })
-  const [contaForm, setContaForm] = useState({ name: '', bank: '', balance: '0', account_type: 'corrente' })
+  const [form, setForm] = useState({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
+  const [contaForm, setContaForm] = useState({ name: '', bank: '', balance: '0', type: 'corrente' })
   const [clientes, setClientes] = useState([])
 
   useEffect(() => { fetchTudo() }, [])
@@ -44,7 +44,7 @@ export default function Financeiro() {
     e.preventDefault(); setSaving(true)
     await supabase.from('financial_transactions').insert({ ...form, amount: Number(form.amount) })
     setSaving(false); setShowModal(false)
-    setForm({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '' })
+    setForm({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
     fetchTudo()
   }
 
@@ -52,7 +52,7 @@ export default function Financeiro() {
     e.preventDefault(); setSaving(true)
     await supabase.from('bank_accounts').insert({ ...contaForm, balance: Number(contaForm.balance) })
     setSaving(false); setShowContaModal(false)
-    setContaForm({ name: '', bank: '', balance: '0', account_type: 'corrente' })
+    setContaForm({ name: '', bank: '', balance: '0', type: 'corrente' })
     fetchTudo()
   }
 
@@ -122,7 +122,7 @@ export default function Financeiro() {
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏦</div>
                   <div>
                     <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.bank} · {c.account_type}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.bank} · {c.type}</div>
                   </div>
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: Number(c.balance) >= 0 ? '#10b981' : '#ef4444' }}>{fmt(c.balance)}</div>
@@ -149,7 +149,7 @@ export default function Financeiro() {
                 <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Saldo</div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: Number(c.balance) >= 0 ? '#10b981' : '#ef4444' }}>{fmt(c.balance)}</div>
               </div>
-              <div style={{ marginTop: 8 }}><Badge color="blue">{c.account_type}</Badge></div>
+              <div style={{ marginTop: 8 }}><Badge color="blue">{c.type}</Badge></div>
             </div>
           ))}
           {contas.length === 0 && (
@@ -238,6 +238,12 @@ export default function Financeiro() {
           </Select>
           <Input label="Categoria" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Ex: Honorários, Aluguel, Impostos..." />
           <Textarea label="Observações" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', marginTop: 4 }}>
+            <input type="checkbox" id="is_recurring" checked={form.is_recurring} onChange={e => setForm(f => ({ ...f, is_recurring: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#3b82f6' }} />
+            <label htmlFor="is_recurring" style={{ fontSize: 13, color: '#374151', cursor: 'pointer', fontWeight: 500 }}>
+              Honorário recorrente — gerar automaticamente todo dia 01
+            </label>
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Btn>
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Movimentação'}</Btn>
@@ -252,7 +258,7 @@ export default function Financeiro() {
           <Input label="Banco" value={contaForm.bank} onChange={e => setContaForm(f => ({ ...f, bank: e.target.value }))} placeholder="Ex: Itaú, Bradesco, Nubank..." />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input label="Saldo inicial (R$)" type="number" step="0.01" value={contaForm.balance} onChange={e => setContaForm(f => ({ ...f, balance: e.target.value }))} />
-            <Select label="Tipo de Conta" value={contaForm.account_type} onChange={e => setContaForm(f => ({ ...f, account_type: e.target.value }))}>
+            <Select label="Tipo de Conta" value={contaForm.type} onChange={e => setContaForm(f => ({ ...f, type: e.target.value }))}>
               <option value="corrente">Conta Corrente</option>
               <option value="poupanca">Poupança</option>
               <option value="investimento">Investimento</option>
