@@ -42,7 +42,13 @@ export default function Financeiro() {
 
   async function salvarTransacao(e) {
     e.preventDefault(); setSaving(true)
-    await supabase.from('financial_transactions').insert({ ...form, amount: Number(form.amount) })
+    const { error } = await supabase.from('financial_transactions').insert({
+      ...form,
+      amount: Number(form.amount),
+      client_id: form.client_id || null,
+      due_date: form.due_date || null,
+    })
+    if (error) { alert('Erro ao salvar: ' + error.message); setSaving(false); return }
     setSaving(false); setShowModal(false)
     setForm({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
     fetchTudo()
@@ -50,7 +56,8 @@ export default function Financeiro() {
 
   async function salvarConta(e) {
     e.preventDefault(); setSaving(true)
-    await supabase.from('bank_accounts').insert({ ...contaForm, balance: Number(contaForm.balance) })
+    const { error } = await supabase.from('bank_accounts').insert({ ...contaForm, balance: Number(contaForm.balance) })
+    if (error) { alert('Erro ao salvar conta: ' + error.message); setSaving(false); return }
     setSaving(false); setShowContaModal(false)
     setContaForm({ name: '', bank: '', balance: '0', type: 'corrente' })
     fetchTudo()
