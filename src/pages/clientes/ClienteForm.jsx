@@ -9,7 +9,15 @@ const emptyForm = {
   cnpj: '', razao_social: '', nome_fantasia: '', inscricao_municipal: '',
   inscricao_estadual: '', tributacao: '', data_entrada: '', aberto_pelo_escritorio: '',
   status: 'ativo', email: '', telefone: '', endereco: '', portal_credentials: [],
+  setores_responsaveis: {}, honorario_valor: '', honorario_dia: '5',
 }
+
+const SETORES = [
+  { key: 'fiscal', label: 'Fiscal' },
+  { key: 'pessoal', label: 'Pessoal (DP)' },
+  { key: 'contabil', label: 'Contábil' },
+  { key: 'societario', label: 'Societário' },
+]
 
 export default function ClienteForm() {
   const { id } = useParams()
@@ -19,19 +27,36 @@ export default function ClienteForm() {
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [usuarios, setUsuarios] = useState([])
 
   useEffect(() => {
+    fetchUsuarios()
     if (isEdit) fetchCliente()
   }, [id])
+
+  async function fetchUsuarios() {
+    const { data } = await supabase.from('users').select('id, name').order('name')
+    setUsuarios(data || [])
+  }
 
   async function fetchCliente() {
     setLoading(true)
     const { data } = await supabase.from('clients').select('*').eq('id', id).single()
-    if (data) setForm({ ...data, portal_credentials: data.portal_credentials || [] })
+    if (data) setForm({
+      ...emptyForm,
+      ...data,
+      portal_credentials: data.portal_credentials || [],
+      setores_responsaveis: data.setores_responsaveis || {},
+      honorario_valor: data.honorario_valor || '',
+      honorario_dia: data.honorario_dia || '5',
+    })
     setLoading(false)
   }
 
   function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
+  function setSetor(key, value) {
+    setForm(f => ({ ...f, setores_responsaveis: { ...f.setores_responsaveis, [key]: value || null } }))
+  }
 
   function addPortal() { setForm(f => ({ ...f, portal_credentials: [...f.portal_credentials, { ...emptyPortal }] })) }
   function updatePortal(i, field, value) {
@@ -41,8 +66,56 @@ export default function ClienteForm() {
 
   async function handleSubmit(e) {
     e.preventDefault(); setSaving(true)
-    if (isEdit) await supabase.from('clients').update(form).eq('id', id)
-    else await supabase.from('clients').insert(form)
+
+    const payload = {
+      ...form,
+      honorario_valor: form.honorario_valor ? Number(form.honorario_valor) : null,
+      honorario_dia: form.honorario_dia ? Number(form.honorario_dia) : 5,
+    }
+
+    let clienteId = id
+    if (isEdit) {
+      await supabase.from('clients').update(payload).eq('id', id)
+    } else {
+      const { data } = await supabase.from('clients').insert(payload).select('id').single()
+      clienteId = data?.id
+    }
+
+    // Sincronizar honorário como transação recorrente
+    if (clienteId && Number(form.honorario_valor) > 0) {
+      const hoje = new Date()
+      const ano = hoje.getFullYear()
+      const mes = String(hoje.getMonth() + 1).padStart(2, '0')
+      const dia = String(Number(form.honorario_dia) || 5).padStart(2, '0')
+      const dueDate = `${ano}-${mes}-${dia}`
+
+      // Verifica se já existe honorário recorrente para esse cliente
+      const { data: existing } = await supabase
+        .from('financial_transactions')
+        .select('id')
+        .eq('client_id', clienteId)
+        .eq('is_recurring', true)
+        .eq('category', 'Honorários')
+        .maybeSingle()
+
+      if (existing) {
+        await supabase.from('financial_transactions')
+          .update({ amount: Number(form.honorario_valor), due_date: dueDate })
+          .eq('id', existing.id)
+      } else {
+        await supabase.from('financial_transactions').insert({
+          type: 'receita',
+          description: `Honorários`,
+          amount: Number(form.honorario_valor),
+          due_date: dueDate,
+          status: 'pendente',
+          category: 'Honorários',
+          client_id: clienteId,
+          is_recurring: true,
+        })
+      }
+    }
+
     setSaving(false)
     navigate('/clientes')
   }
@@ -101,6 +174,37 @@ export default function ClienteForm() {
               <option value="inativo">Inativo</option>
               <option value="suspenso">Suspenso</option>
             </Select>
+          </div>
+        </Section>
+
+        {/* Honorários */}
+        <Section title="Honorários">
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
+            O valor será gerado automaticamente como receita recorrente no financeiro todo mês no dia informado.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Input label="Valor do Honorário (R$)" type="number" step="0.01" min="0" value={form.honorario_valor} onChange={e => set('honorario_valor', e.target.value)} placeholder="0,00" />
+            <Input label="Dia de vencimento (1-28)" type="number" min="1" max="28" value={form.honorario_dia} onChange={e => set('honorario_dia', e.target.value)} placeholder="5" />
+          </div>
+        </Section>
+
+        {/* Setores Responsáveis */}
+        <Section title="Responsáveis por Setor">
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#64748b' }}>
+            Defina quem é o responsável de cada setor para este cliente. Ao gerar obrigações, elas serão vinculadas ao responsável do setor correspondente.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            {SETORES.map(s => (
+              <Select
+                key={s.key}
+                label={`Responsável — ${s.label}`}
+                value={form.setores_responsaveis?.[s.key] || ''}
+                onChange={e => setSetor(s.key, e.target.value)}
+              >
+                <option value="">Não definido</option>
+                {usuarios.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            ))}
           </div>
         </Section>
 

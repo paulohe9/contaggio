@@ -30,7 +30,7 @@ export default function Obrigacoes() {
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
-  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '' })
+  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '' })
   const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '' })
 
   useEffect(() => { fetchTudo() }, [])
@@ -40,7 +40,7 @@ export default function Obrigacoes() {
     const [oRes, tRes, cRes] = await Promise.all([
       supabase.from('obligations').select('*, clients(razao_social, tributacao)').order('due_date'),
       supabase.from('obligation_templates').select('*').order('tributacao, name'),
-      supabase.from('clients').select('id, razao_social, tributacao').eq('status', 'ativo').order('razao_social'),
+      supabase.from('clients').select('id, razao_social, tributacao, setores_responsaveis').eq('status', 'ativo').order('razao_social'),
     ])
     setObrigacoes(oRes.data || [])
     setTemplates(tRes.data || [])
@@ -54,7 +54,7 @@ export default function Obrigacoes() {
     e.preventDefault(); setSaving(true)
     await supabase.from('obligations').insert(form)
     setSaving(false); setShowModal(false)
-    setForm({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '' })
+    setForm({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '' })
     fetchTudo()
   }
 
@@ -81,19 +81,29 @@ export default function Obrigacoes() {
     const hoje = new Date()
     const registros = []
 
+    const sectorMap = { 'Fiscal': 'fiscal', 'Pessoal': 'pessoal', 'Contábil': 'contabil', 'Societário': 'societario', 'DP': 'pessoal' }
+
     for (const cli of clientesFiltrados) {
       for (const tpl of tplsFiltrados) {
         const dia = Math.min(Number(tpl.due_day || 15), 28)
         let dataVenc = setDate(hoje, dia)
         if (dataVenc < hoje) dataVenc = addMonths(dataVenc, 1)
+        // data_meta = 3 dias antes do vencimento como sugestão
+        const dataMeta = addMonths(dataVenc, 0)
+        dataMeta.setDate(dataMeta.getDate() - 3)
+        // responsável pelo setor desta obrigação
+        const sectorKey = sectorMap[tpl.category] || null
+        const responsibleId = sectorKey && cli.setores_responsaveis ? cli.setores_responsaveis[sectorKey] || null : null
         registros.push({
           client_id: cli.id,
           title: tpl.name,
           description: tpl.description || '',
           due_date: format(dataVenc, 'yyyy-MM-dd'),
+          data_meta: format(dataMeta, 'yyyy-MM-dd'),
           status: 'pendente',
           periodicity: tpl.periodicity,
           category: tpl.category || '',
+          responsible_id: responsibleId,
         })
       }
     }
@@ -186,10 +196,16 @@ export default function Obrigacoes() {
                   {o.clients && <div style={{ fontSize: 12, color: '#64748b' }}>👤 {o.clients.razao_social}</div>}
                   {o.description && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{o.description}</div>}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+                  {o.data_meta && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, color: '#3b82f6', fontWeight: 600 }}>Meta</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>{format(parseISO(o.data_meta), 'dd/MM/yyyy')}</div>
+                    </div>
+                  )}
                   {o.due_date && (
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>Vencimento</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>Limite</div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{format(parseISO(o.due_date), 'dd/MM/yyyy')}</div>
                     </div>
                   )}
@@ -258,12 +274,13 @@ export default function Obrigacoes() {
           </Select>
           <Input label="Título *" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Ex: DAS Simples Nacional" required />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input label="Vencimento" type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            <Input label="Data Meta (entregar até)" type="date" value={form.data_meta} onChange={e => setForm(f => ({ ...f, data_meta: e.target.value }))} />
+            <Input label="Data Limite (prazo máximo)" type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Select label="Periodicidade" value={form.periodicity} onChange={e => setForm(f => ({ ...f, periodicity: e.target.value }))}>
               {PERIODICIDADES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </Select>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input label="Categoria" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Fiscal, Trabalhista..." />
             <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="pendente">Pendente</option>

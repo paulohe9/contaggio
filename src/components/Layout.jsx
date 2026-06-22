@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, Users, Wallet, ClipboardList, Scale, UserCog,
-  ChevronLeft, ChevronRight, LogOut, Building2
+  ChevronLeft, ChevronRight, LogOut, Building2, Inbox
 } from 'lucide-react'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { path: '/clientes', label: 'Clientes', icon: Users },
   { path: '/financeiro', label: 'Financeiro', icon: Wallet },
   { path: '/obrigacoes', label: 'Obrigações', icon: ClipboardList },
+  { path: '/solicitacoes', label: 'Solicitações', icon: Inbox },
   { path: '/legalizacao', label: 'Legalização', icon: Scale },
 ]
 

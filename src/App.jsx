@@ -9,6 +9,7 @@ import ClienteDetalhe from './pages/clientes/ClienteDetalhe'
 import Financeiro from './pages/financeiro/Financeiro'
 import Obrigacoes from './pages/obrigacoes/Obrigacoes'
 import Legalizacao from './pages/legalizacao/Legalizacao'
+import Solicitacoes from './pages/solicitacoes/Solicitacoes'
 import Usuarios from './pages/Usuarios'
 
 function PrivateRoute({ children }) {
@@ -37,6 +38,7 @@ function AppRoutes() {
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/obrigacoes" element={<Obrigacoes />} />
               <Route path="/legalizacao" element={<Legalizacao />} />
+              <Route path="/solicitacoes" element={<Solicitacoes />} />
               <Route path="/usuarios" element={<Usuarios />} />
             </Routes>
           </Layout>
