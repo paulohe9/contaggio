@@ -5,8 +5,9 @@ import { ptBR } from 'date-fns/locale'
 import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBar } from '../../components/ui'
 import { Plus, Landmark } from 'lucide-react'
 
-const catCores = { receita: 'green', despesa: 'red', transferencia: 'blue' }
+const tipoCores = { receber: 'green', pagar: 'red', transferencia: 'blue' }
 const statusCores = { pendente: 'yellow', pago: 'green', cancelado: 'slate', atrasado: 'red' }
+const tipoLabel = { receber: 'Receber', pagar: 'Pagar', transferencia: 'Transferência' }
 
 export default function Financeiro() {
   const [transacoes, setTransacoes] = useState([])
@@ -16,7 +17,8 @@ export default function Financeiro() {
   const [showModal, setShowModal] = useState(false)
   const [showContaModal, setShowContaModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
+  const [form, setForm] = useState({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
+  const [pagamentoModal, setPagamentoModal] = useState(null)
   const [contaForm, setContaForm] = useState({ name: '', bank: '', balance: '0', type: 'corrente' })
   const [clientes, setClientes] = useState([])
 
@@ -35,10 +37,38 @@ export default function Financeiro() {
     setLoading(false)
   }
 
-  const totalEntradas = transacoes.filter(t => t.type === 'receita' && t.status === 'pago').reduce((s, t) => s + Number(t.amount), 0)
-  const totalSaidas = transacoes.filter(t => t.type === 'despesa' && t.status === 'pago').reduce((s, t) => s + Number(t.amount), 0)
+  const hoje = new Date()
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+
+  // Receber (entrada)
+  const recebidoMes = transacoes.filter(t =>
+    t.type === 'receber' && t.status === 'pago' &&
+    t.data_pagamento && new Date(t.data_pagamento) >= inicioMes && new Date(t.data_pagamento) <= fimMes
+  ).reduce((s, t) => s + Number(t.amount), 0)
+
+  const aReceber = transacoes.filter(t =>
+    t.type === 'receber' && t.status === 'pendente'
+  ).reduce((s, t) => s + Number(t.amount), 0)
+
+  const vencidosNaoPagos = transacoes.filter(t =>
+    t.type === 'receber' && t.status === 'pendente' && t.due_date && new Date(t.due_date) < hoje
+  ).reduce((s, t) => s + Number(t.amount), 0)
+
+  const totalAReceber = aReceber || 1
+  const percInadimplencia = Math.round((vencidosNaoPagos / totalAReceber) * 100)
+
+  // Pagar (saída)
+  const aPagar = transacoes.filter(t =>
+    t.type === 'pagar' && t.status === 'pendente'
+  ).reduce((s, t) => s + Number(t.amount), 0)
+
+  const pagosMes = transacoes.filter(t =>
+    t.type === 'pagar' && t.status === 'pago' &&
+    t.data_pagamento && new Date(t.data_pagamento) >= inicioMes && new Date(t.data_pagamento) <= fimMes
+  ).reduce((s, t) => s + Number(t.amount), 0)
+
   const saldoTotal = contas.reduce((s, c) => s + Number(c.balance), 0)
-  const pendentes = transacoes.filter(t => t.status === 'pendente').reduce((s, t) => s + Number(t.amount), 0)
 
   async function salvarTransacao(e) {
     e.preventDefault(); setSaving(true)
@@ -47,10 +77,11 @@ export default function Financeiro() {
       amount: Number(form.amount),
       client_id: form.client_id || null,
       due_date: form.due_date || null,
+      data_pagamento: form.data_pagamento || null,
     })
     if (error) { alert('Erro ao salvar: ' + error.message); setSaving(false); return }
     setSaving(false); setShowModal(false)
-    setForm({ type: 'receita', description: '', amount: '', due_date: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
+    setForm({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
     fetchTudo()
   }
 
@@ -63,9 +94,18 @@ export default function Financeiro() {
     fetchTudo()
   }
 
-  async function alterarStatus(id, status) {
-    await supabase.from('financial_transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
-    setTransacoes(ts => ts.map(t => t.id === id ? { ...t, status } : t))
+  async function alterarStatus(id, status, data_pagamento) {
+    const upd = { status, updated_at: new Date().toISOString() }
+    if (data_pagamento) upd.data_pagamento = data_pagamento
+    await supabase.from('financial_transactions').update(upd).eq('id', id)
+    setTransacoes(ts => ts.map(t => t.id === id ? { ...t, status, data_pagamento: data_pagamento || t.data_pagamento } : t))
+    setPagamentoModal(null)
+  }
+
+  async function confirmarPagamento(e) {
+    e.preventDefault()
+    const { id, data_pagamento, status } = pagamentoModal
+    await alterarStatus(id, status, data_pagamento || new Date().toISOString().slice(0, 10))
   }
 
   const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -90,11 +130,21 @@ export default function Financeiro() {
       />
 
       {/* Cards Resumo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
-        <StatCard label="Saldo Total" value={fmt(saldoTotal)} icon="🏦" color="#10b981" bg="#f0fdf4" border="#bbf7d0" />
-        <StatCard label="Entradas (pagas)" value={fmt(totalEntradas)} icon="📈" color="#3b82f6" bg="#eff6ff" border="#bfdbfe" />
-        <StatCard label="Saídas (pagas)" value={fmt(totalSaidas)} icon="📉" color="#ef4444" bg="#fef2f2" border="#fecaca" />
-        <StatCard label="Pendentes" value={fmt(pendentes)} icon="⏳" color="#f59e0b" bg="#fffbeb" border="#fde68a" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
+        {/* Recebimentos */}
+        <StatCard label="Recebido no Mês" value={fmt(recebidoMes)} icon="📈" color="#10b981" bg="#f0fdf4" border="#bbf7d0" />
+        <StatCard label="A Receber" value={fmt(aReceber)} icon="⏳" color="#3b82f6" bg="#eff6ff" border="#bfdbfe" />
+        <StatCard
+          label="Inadimplência"
+          value={`${aReceber > 0 ? percInadimplencia : 0}%`}
+          icon="⚠️"
+          color={percInadimplencia > 20 ? '#ef4444' : percInadimplencia > 5 ? '#f59e0b' : '#10b981'}
+          bg={percInadimplencia > 20 ? '#fef2f2' : percInadimplencia > 5 ? '#fffbeb' : '#f0fdf4'}
+          border={percInadimplencia > 20 ? '#fecaca' : percInadimplencia > 5 ? '#fde68a' : '#bbf7d0'}
+        />
+        {/* Pagamentos */}
+        <StatCard label="A Pagar" value={fmt(aPagar)} icon="📉" color="#ef4444" bg="#fef2f2" border="#fecaca" />
+        <StatCard label="Pagos no Mês" value={fmt(pagosMes)} icon="✅" color="#64748b" bg="#f8fafc" border="#e2e8f0" />
       </div>
 
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -111,8 +161,8 @@ export default function Financeiro() {
                   <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{t.due_date ? format(parseISO(t.due_date), 'dd/MM/yyyy') : '—'}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.type === 'receita' ? '#10b981' : '#ef4444' }}>
-                    {t.type === 'receita' ? '+' : '-'}{fmt(t.amount)}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.type === 'receber' ? '#10b981' : '#ef4444' }}>
+                    {t.type === 'receber' ? '+' : '-'}{fmt(t.amount)}
                   </div>
                   <Badge color={statusCores[t.status]}>{t.status}</Badge>
                 </div>
@@ -175,45 +225,59 @@ export default function Financeiro() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                {['Descrição', 'Tipo', 'Valor', 'Vencimento', 'Status', 'Ações'].map(h => (
+                {['Descrição', 'Tipo', 'Valor', 'Vencimento', 'Pgto', 'Status', 'Ações'].map(h => (
                   <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Carregando...</td></tr>
+                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Carregando...</td></tr>
               ) : transacoes.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
+                <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
                   <div style={{ fontSize: 36, marginBottom: 8 }}>💳</div>
                   <div style={{ fontWeight: 600, color: '#475569' }}>Nenhuma movimentação registrada</div>
                 </td></tr>
-              ) : transacoes.map(t => (
-                <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}
+              ) : transacoes.map(t => {
+                const atrasado = t.status === 'pendente' && t.due_date && new Date(t.due_date) < hoje
+                const pgtoAtrasado = t.data_pagamento && t.due_date && new Date(t.data_pagamento) > new Date(t.due_date)
+                return (
+                <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc', background: atrasado ? '#fffbeb' : 'white' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                  onMouseLeave={e => e.currentTarget.style.background = atrasado ? '#fffbeb' : 'white'}>
                   <td style={{ padding: '12px 18px' }}>
                     <div style={{ fontWeight: 600, color: '#1e293b' }}>{t.description}</div>
                     {t.clients && <div style={{ fontSize: 11, color: '#94a3b8' }}>{t.clients.razao_social}</div>}
+                    {t.is_recurring && <div style={{ fontSize: 10, color: '#3b82f6', fontWeight: 600 }}>↻ Recorrente</div>}
                   </td>
-                  <td style={{ padding: '12px 18px' }}><Badge color={catCores[t.type]}>{t.type}</Badge></td>
-                  <td style={{ padding: '12px 18px', fontWeight: 700, color: t.type === 'receita' ? '#10b981' : '#ef4444', fontFamily: 'monospace' }}>
-                    {t.type === 'receita' ? '+' : '-'}{fmt(t.amount)}
+                  <td style={{ padding: '12px 18px' }}><Badge color={tipoCores[t.type]}>{tipoLabel[t.type] || t.type}</Badge></td>
+                  <td style={{ padding: '12px 18px', fontWeight: 700, color: t.type === 'receber' ? '#10b981' : '#ef4444', fontFamily: 'monospace' }}>
+                    {t.type === 'receber' ? '+' : '-'}{fmt(t.amount)}
                   </td>
-                  <td style={{ padding: '12px 18px', color: '#64748b', fontSize: 12 }}>
+                  <td style={{ padding: '12px 18px', color: atrasado ? '#f59e0b' : '#64748b', fontSize: 12, fontWeight: atrasado ? 700 : 400 }}>
                     {t.due_date ? format(parseISO(t.due_date), 'dd/MM/yyyy') : '—'}
+                    {atrasado && <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>VENCIDO</div>}
+                  </td>
+                  <td style={{ padding: '12px 18px', fontSize: 12 }}>
+                    {t.data_pagamento ? (
+                      <span style={{ color: pgtoAtrasado ? '#f59e0b' : '#10b981', fontWeight: 600 }}>
+                        {format(parseISO(t.data_pagamento), 'dd/MM/yyyy')}
+                        {pgtoAtrasado && <div style={{ fontSize: 10, color: '#f59e0b' }}>Em atraso</div>}
+                      </span>
+                    ) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '12px 18px' }}><Badge color={statusCores[t.status]}>{t.status}</Badge></td>
                   <td style={{ padding: '12px 18px' }}>
                     {t.status === 'pendente' && (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <Btn size="sm" variant="success" onClick={() => alterarStatus(t.id, 'pago')}>✓ Pago</Btn>
+                        <Btn size="sm" variant="success" onClick={() => setPagamentoModal({ id: t.id, status: 'pago', data_pagamento: new Date().toISOString().slice(0,10), tipo: t.type })}>✓ {t.type === 'receber' ? 'Recebido' : 'Pago'}</Btn>
                         <Btn size="sm" variant="danger" onClick={() => alterarStatus(t.id, 'cancelado')}>✕</Btn>
                       </div>
                     )}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -224,18 +288,19 @@ export default function Financeiro() {
         <form onSubmit={salvarTransacao}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select label="Tipo *" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-              <option value="receita">Receita (entrada)</option>
-              <option value="despesa">Despesa (saída)</option>
+              <option value="receber">A Receber (entrada)</option>
+              <option value="pagar">A Pagar (saída)</option>
               <option value="transferencia">Transferência</option>
             </Select>
             <Input label="Valor (R$) *" type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0,00" required />
           </div>
           <Input label="Descrição *" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Ex: Honorários - Janeiro" required />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Input label="Vencimento" type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            <Input label="Data Pagamento" type="date" value={form.data_pagamento} onChange={e => setForm(f => ({ ...f, data_pagamento: e.target.value }))} />
             <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="pendente">Pendente</option>
-              <option value="pago">Pago</option>
+              <option value="pago">Pago/Recebido</option>
               <option value="cancelado">Cancelado</option>
             </Select>
           </div>
@@ -256,6 +321,30 @@ export default function Financeiro() {
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Movimentação'}</Btn>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Confirmar Pagamento */}
+      <Modal open={!!pagamentoModal} onClose={() => setPagamentoModal(null)} title={pagamentoModal?.tipo === 'receber' ? 'Confirmar Recebimento' : 'Confirmar Pagamento'}>
+        {pagamentoModal && (
+          <form onSubmit={confirmarPagamento}>
+            <Input
+              label="Data do pagamento *"
+              type="date"
+              value={pagamentoModal.data_pagamento}
+              onChange={e => setPagamentoModal(p => ({ ...p, data_pagamento: e.target.value }))}
+              required
+            />
+            {pagamentoModal.data_pagamento && pagamentoModal.due_date && new Date(pagamentoModal.data_pagamento) > new Date(pagamentoModal.due_date) && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#92400e', marginTop: 4 }}>
+                ⚠️ Pagamento após o vencimento — será marcado como pago em atraso.
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <Btn variant="secondary" onClick={() => setPagamentoModal(null)}>Cancelar</Btn>
+              <Btn type="submit">{pagamentoModal?.tipo === 'receber' ? '✓ Confirmar Recebimento' : '✓ Confirmar Pagamento'}</Btn>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Modal Conta */}
