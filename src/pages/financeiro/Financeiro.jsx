@@ -94,18 +94,29 @@ export default function Financeiro() {
     fetchTudo()
   }
 
-  async function alterarStatus(id, status, data_pagamento) {
+  async function alterarStatus(id, status, data_pagamento, bank_account_id) {
     const upd = { status, updated_at: new Date().toISOString() }
     if (data_pagamento) upd.data_pagamento = data_pagamento
+    if (bank_account_id) upd.bank_account_id = bank_account_id
     await supabase.from('financial_transactions').update(upd).eq('id', id)
-    setTransacoes(ts => ts.map(t => t.id === id ? { ...t, status, data_pagamento: data_pagamento || t.data_pagamento } : t))
+    setTransacoes(ts => ts.map(t => t.id === id ? { ...t, status, data_pagamento: data_pagamento || t.data_pagamento, bank_account_id: bank_account_id || t.bank_account_id } : t))
     setPagamentoModal(null)
   }
 
   async function confirmarPagamento(e) {
     e.preventDefault()
-    const { id, data_pagamento, status } = pagamentoModal
-    await alterarStatus(id, status, data_pagamento || new Date().toISOString().slice(0, 10))
+    const { id, data_pagamento, status, bank_account_id, amount, tipo } = pagamentoModal
+    await alterarStatus(id, status, data_pagamento || new Date().toISOString().slice(0, 10), bank_account_id)
+    // Atualizar saldo da conta bancária
+    if (bank_account_id) {
+      const conta = contas.find(c => c.id === bank_account_id)
+      if (conta) {
+        const delta = tipo === 'receber' ? Number(amount) : -Number(amount)
+        const novoSaldo = Number(conta.balance) + delta
+        await supabase.from('bank_accounts').update({ balance: novoSaldo }).eq('id', bank_account_id)
+        setContas(cs => cs.map(c => c.id === bank_account_id ? { ...c, balance: novoSaldo } : c))
+      }
+    }
   }
 
   const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -270,7 +281,7 @@ export default function Financeiro() {
                   <td style={{ padding: '12px 18px' }}>
                     {t.status === 'pendente' && (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <Btn size="sm" variant="success" onClick={() => setPagamentoModal({ id: t.id, status: 'pago', data_pagamento: new Date().toISOString().slice(0,10), tipo: t.type })}>✓ {t.type === 'receber' ? 'Recebido' : 'Pago'}</Btn>
+                        <Btn size="sm" variant="success" onClick={() => setPagamentoModal({ id: t.id, status: 'pago', data_pagamento: new Date().toISOString().slice(0,10), tipo: t.type, amount: t.amount, due_date: t.due_date, bank_account_id: contas[0]?.id || '' })}>✓ {t.type === 'receber' ? 'Recebido' : 'Pago'}</Btn>
                         <Btn size="sm" variant="danger" onClick={() => alterarStatus(t.id, 'cancelado')}>✕</Btn>
                       </div>
                     )}
@@ -339,6 +350,19 @@ export default function Financeiro() {
                 ⚠️ Pagamento após o vencimento — será marcado como pago em atraso.
               </div>
             )}
+            <Select
+              label="Conta bancária *"
+              value={pagamentoModal.bank_account_id}
+              onChange={e => setPagamentoModal(p => ({ ...p, bank_account_id: e.target.value }))}
+              required
+            >
+              <option value="">Selecione a conta</option>
+              {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
+            </Select>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#475569', marginTop: 2 }}>
+              {pagamentoModal.tipo === 'receber' ? '📈 Saldo da conta será aumentado em ' : '📉 Saldo da conta será reduzido em '}
+              <strong>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pagamentoModal.amount)}</strong>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
               <Btn variant="secondary" onClick={() => setPagamentoModal(null)}>Cancelar</Btn>
               <Btn type="submit">{pagamentoModal?.tipo === 'receber' ? '✓ Confirmar Recebimento' : '✓ Confirmar Pagamento'}</Btn>
