@@ -6,6 +6,11 @@ import {
   ChevronLeft, ChevronRight, LogOut, Building2, Inbox
 } from 'lucide-react'
 
+const G = '#C9960A'   // dourado Aggio
+const G2 = '#E8B000'  // dourado claro hover
+const DARK = '#0a0b0d'
+const DARK2 = '#111318'
+
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/clientes', label: 'Clientes', icon: Users },
@@ -15,12 +20,8 @@ const navItems = [
   { path: '/legalizacao', label: 'Legalização', icon: Scale },
 ]
 
-const roleBadge = {
-  admin: 'bg-red-500 text-white',
-  gerente: 'bg-amber-500 text-white',
-  user: 'bg-emerald-500 text-white',
-}
 const roleLabel = { admin: 'Admin', gerente: 'Gerente', user: 'Usuário' }
+const roleColor = { admin: '#ef4444', gerente: G, user: '#10b981' }
 
 export default function Layout({ children }) {
   const { profile, signOut } = useAuth()
@@ -41,35 +42,41 @@ export default function Layout({ children }) {
       <aside style={{
         width: collapsed ? 68 : 240,
         minWidth: collapsed ? 68 : 240,
-        background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+        background: DARK,
         display: 'flex',
         flexDirection: 'column',
         transition: 'width 0.25s ease, min-width 0.25s ease',
         overflow: 'hidden',
         position: 'relative',
         zIndex: 10,
-        boxShadow: '4px 0 24px rgba(0,0,0,0.15)',
+        boxShadow: '4px 0 24px rgba(0,0,0,0.4)',
       }}>
         {/* Logo */}
         <div style={{
-          padding: '20px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          padding: '18px 16px',
+          borderBottom: `1px solid rgba(201,150,10,0.15)`,
           display: 'flex',
           alignItems: 'center',
           gap: 10,
           minHeight: 68,
         }}>
+          {/* Ícone com asa/símbolo da Aggio */}
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+            background: `linear-gradient(135deg, ${G} 0%, #8a6500 100%)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'white', fontWeight: 800, fontSize: 16, flexShrink: 0,
-            boxShadow: '0 4px 12px rgba(59,130,246,0.4)',
-          }}>C</div>
+            boxShadow: `0 4px 14px rgba(201,150,10,0.4)`,
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M4 20 C8 14, 14 10, 20 4" stroke="#0a0b0d" strokeWidth="2.5" strokeLinecap="round"/>
+              <path d="M12 20 C14 15, 18 11, 20 4" stroke="#0a0b0d" strokeWidth="2" strokeLinecap="round" opacity="0.7"/>
+              <path d="M20 4 L20 12 M20 4 L12 4" stroke="#0a0b0d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
           {!collapsed && (
             <div style={{ overflow: 'hidden' }}>
-              <div style={{ color: 'white', fontWeight: 700, fontSize: 16, lineHeight: 1.2 }}>Contaggio</div>
-              <div style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>Sistema Contábil</div>
+              <div style={{ color: G, fontWeight: 800, fontSize: 17, lineHeight: 1.1, letterSpacing: '0.02em' }}>AGGIO</div>
+              <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Contábil</div>
             </div>
           )}
         </div>
@@ -80,20 +87,22 @@ export default function Layout({ children }) {
           style={{
             position: 'absolute', top: 80, right: -12,
             width: 24, height: 24, borderRadius: '50%',
-            background: '#334155', border: '2px solid #1e293b',
+            background: DARK2, border: `2px solid rgba(201,150,10,0.3)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#94a3b8', cursor: 'pointer', zIndex: 20,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            color: G, cursor: 'pointer', zIndex: 20,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
           }}
         >
           {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
         </button>
 
         {/* Nav */}
-        <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto', overflowX: 'hidden' }}>
-          <div style={{ marginBottom: 4 }}>
-            {!collapsed && <div style={{ color: '#475569', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', padding: '0 8px', marginBottom: 6, textTransform: 'uppercase' }}>Menu</div>}
-          </div>
+        <nav style={{ flex: 1, padding: '16px 10px', overflowY: 'auto', overflowX: 'hidden' }}>
+          {!collapsed && (
+            <div style={{ color: 'rgba(201,150,10,0.4)', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', padding: '0 8px', marginBottom: 8, textTransform: 'uppercase' }}>
+              Menu
+            </div>
+          )}
           {allNavItems.map(item => {
             const Icon = item.icon
             const active = isActive(item.path)
@@ -106,18 +115,18 @@ export default function Layout({ children }) {
                   display: 'flex', alignItems: 'center',
                   gap: 10, padding: collapsed ? '10px 14px' : '10px 12px',
                   borderRadius: 10, marginBottom: 2,
-                  background: active ? 'rgba(59,130,246,0.15)' : 'transparent',
-                  color: active ? '#60a5fa' : '#94a3b8',
-                  textDecoration: 'none', fontWeight: active ? 600 : 400,
-                  fontSize: 14, transition: 'all 0.15s',
-                  borderLeft: active ? '3px solid #3b82f6' : '3px solid transparent',
+                  background: active ? `rgba(201,150,10,0.12)` : 'transparent',
+                  color: active ? G2 : 'rgba(255,255,255,0.45)',
+                  textDecoration: 'none', fontWeight: active ? 700 : 400,
+                  fontSize: 13.5, transition: 'all 0.15s',
+                  borderLeft: active ? `3px solid ${G}` : '3px solid transparent',
                   justifyContent: collapsed ? 'center' : 'flex-start',
                   whiteSpace: 'nowrap',
                 }}
-                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#cbd5e1' } }}
-                onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8' } }}
+                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.75)' } }}
+                onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)' } }}
               >
-                <Icon size={18} style={{ flexShrink: 0 }} />
+                <Icon size={17} style={{ flexShrink: 0 }} />
                 {!collapsed && <span>{item.label}</span>}
               </Link>
             )
@@ -125,20 +134,20 @@ export default function Layout({ children }) {
         </nav>
 
         {/* User */}
-        <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ padding: '12px 10px', borderTop: `1px solid rgba(201,150,10,0.12)` }}>
           {!collapsed && profile && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 4 }}>
               <div style={{
                 width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                background: `linear-gradient(135deg, ${G} 0%, #7a5800 100%)`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', fontWeight: 700, fontSize: 13,
+                color: DARK, fontWeight: 800, fontSize: 13,
               }}>
                 {(profile.name || 'A').charAt(0).toUpperCase()}
               </div>
               <div style={{ overflow: 'hidden', flex: 1 }}>
-                <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }} className={roleBadge[profile.role]}>
+                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 700, background: roleColor[profile.role] + '22', color: roleColor[profile.role], border: `1px solid ${roleColor[profile.role]}44` }}>
                   {roleLabel[profile.role]}
                 </span>
               </div>
@@ -151,12 +160,12 @@ export default function Layout({ children }) {
               display: 'flex', alignItems: 'center', gap: 8,
               padding: collapsed ? '10px 14px' : '8px 12px',
               borderRadius: 10, width: '100%', background: 'transparent', border: 'none',
-              color: '#64748b', cursor: 'pointer', fontSize: 13,
+              color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 13,
               justifyContent: collapsed ? 'center' : 'flex-start',
               transition: 'all 0.15s',
             }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.color = '#f87171' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)' }}
           >
             <LogOut size={16} />
             {!collapsed && <span>Sair</span>}
@@ -168,14 +177,16 @@ export default function Layout({ children }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         {/* Top bar */}
         <header style={{
-          background: 'white', borderBottom: '1px solid #e2e8f0',
-          padding: '0 24px', height: 60, display: 'flex', alignItems: 'center',
+          background: 'white',
+          borderBottom: '1px solid #e8ecf0',
+          padding: '0 28px', height: 58,
+          display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', flexShrink: 0,
-          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+          boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Building2 size={16} style={{ color: '#94a3b8' }} />
-            <span style={{ color: '#64748b', fontSize: 13 }}>
+            <div style={{ width: 3, height: 18, borderRadius: 2, background: G, marginRight: 4 }} />
+            <span style={{ color: '#1e293b', fontSize: 14, fontWeight: 700 }}>
               {allNavItems.find(n => isActive(n.path))?.label || 'Dashboard'}
             </span>
           </div>
@@ -185,9 +196,9 @@ export default function Layout({ children }) {
                 <span style={{ color: '#64748b', fontSize: 13 }}>{profile.name}</span>
                 <div style={{
                   width: 32, height: 32, borderRadius: 8,
-                  background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                  background: `linear-gradient(135deg, ${G} 0%, #7a5800 100%)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontWeight: 700, fontSize: 12,
+                  color: DARK, fontWeight: 800, fontSize: 12,
                 }}>
                   {(profile.name || 'A').charAt(0).toUpperCase()}
                 </div>
@@ -197,7 +208,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* Page content */}
-        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 28px' }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 28px', background: '#f4f6f9' }}>
           {children}
         </main>
       </div>
