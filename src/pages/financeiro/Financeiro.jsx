@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBar } from '../../components/ui'
-import { Plus, Landmark } from 'lucide-react'
+import { Plus, Landmark, Pencil } from 'lucide-react'
 
 const tipoCores = { receber: 'green', pagar: 'red', transferencia: 'blue' }
 const statusCores = { pendente: 'yellow', pago: 'green', cancelado: 'slate', atrasado: 'red' }
@@ -19,6 +19,7 @@ export default function Financeiro() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
   const [pagamentoModal, setPagamentoModal] = useState(null)
+  const [editandoId, setEditandoId] = useState(null)
   const [contaForm, setContaForm] = useState({ name: '', bank: '', balance: '0', type: 'corrente' })
   const [clientes, setClientes] = useState([])
 
@@ -70,18 +71,48 @@ export default function Financeiro() {
 
   const saldoTotal = contas.reduce((s, c) => s + Number(c.balance), 0)
 
+  function abrirEdicao(t) {
+    setEditandoId(t.id)
+    setForm({
+      type: t.type || 'receber',
+      description: t.description || '',
+      amount: t.amount || '',
+      due_date: t.due_date || '',
+      data_pagamento: t.data_pagamento || '',
+      status: t.status || 'pendente',
+      category: t.category || '',
+      client_id: t.client_id || '',
+      notes: t.notes || '',
+      is_recurring: t.is_recurring || false,
+      bank_account_id: t.bank_account_id || '',
+    })
+    setShowModal(true)
+  }
+
   async function salvarTransacao(e) {
     e.preventDefault(); setSaving(true)
-    const { error } = await supabase.from('financial_transactions').insert({
-      ...form,
+    const payload = {
+      type: form.type,
+      description: form.description,
       amount: Number(form.amount),
       client_id: form.client_id || null,
       due_date: form.due_date || null,
       data_pagamento: form.data_pagamento || null,
-    })
+      status: form.status,
+      category: form.category || null,
+      notes: form.notes || null,
+      is_recurring: form.is_recurring,
+      bank_account_id: form.bank_account_id || null,
+    }
+    let error
+    if (editandoId) {
+      ;({ error } = await supabase.from('financial_transactions').update(payload).eq('id', editandoId))
+    } else {
+      ;({ error } = await supabase.from('financial_transactions').insert(payload))
+    }
     if (error) { alert('Erro ao salvar: ' + error.message); setSaving(false); return }
-    setSaving(false); setShowModal(false)
-    setForm({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
+    setSaving(false); setShowModal(false); setEditandoId(null)
+    setForm({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false, bank_account_id: '' })
     fetchTudo()
   }
 
@@ -279,12 +310,17 @@ export default function Financeiro() {
                   </td>
                   <td style={{ padding: '12px 18px' }}><Badge color={statusCores[t.status]}>{t.status}</Badge></td>
                   <td style={{ padding: '12px 18px' }}>
-                    {t.status === 'pendente' && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <Btn size="sm" variant="success" onClick={() => setPagamentoModal({ id: t.id, status: 'pago', data_pagamento: new Date().toISOString().slice(0,10), tipo: t.type, amount: t.amount, due_date: t.due_date, bank_account_id: contas[0]?.id || '' })}>✓ {t.type === 'receber' ? 'Recebido' : 'Pago'}</Btn>
-                        <Btn size="sm" variant="danger" onClick={() => alterarStatus(t.id, 'cancelado')}>✕</Btn>
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {t.status === 'pendente' && (
+                        <>
+                          <Btn size="sm" variant="success" onClick={() => setPagamentoModal({ id: t.id, status: 'pago', data_pagamento: new Date().toISOString().slice(0,10), tipo: t.type, amount: t.amount, due_date: t.due_date, bank_account_id: contas[0]?.id || '' })}>✓ {t.type === 'receber' ? 'Recebido' : 'Pago'}</Btn>
+                          <Btn size="sm" variant="danger" onClick={() => alterarStatus(t.id, 'cancelado')}>✕</Btn>
+                        </>
+                      )}
+                      <button onClick={() => abrirEdicao(t)} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 7, padding: '4px 8px', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                        <Pencil size={11} /> Editar
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 )
@@ -295,7 +331,7 @@ export default function Financeiro() {
       )}
 
       {/* Modal Transação */}
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Nova Movimentação" size="lg">
+      <Modal open={showModal} onClose={() => { setShowModal(false); setEditandoId(null) }} title={editandoId ? 'Editar Movimentação' : 'Nova Movimentação'} size="lg">
         <form onSubmit={salvarTransacao}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select label="Tipo *" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
@@ -319,7 +355,13 @@ export default function Financeiro() {
             <option value="">Sem cliente vinculado</option>
             {clientes.map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
           </Select>
-          <Input label="Categoria" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Ex: Honorários, Aluguel, Impostos..." />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Input label="Categoria" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Ex: Honorários, Aluguel..." />
+            <Select label="Conta bancária" value={form.bank_account_id || ''} onChange={e => setForm(f => ({ ...f, bank_account_id: e.target.value }))}>
+              <option value="">Sem conta vinculada</option>
+              {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
+            </Select>
+          </div>
           <Textarea label="Observações" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', marginTop: 4 }}>
             <input type="checkbox" id="is_recurring" checked={form.is_recurring} onChange={e => setForm(f => ({ ...f, is_recurring: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#3b82f6' }} />
@@ -329,7 +371,7 @@ export default function Financeiro() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Btn>
-            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Movimentação'}</Btn>
+            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : editandoId ? 'Salvar Alterações' : 'Salvar Movimentação'}</Btn>
           </div>
         </form>
       </Modal>
