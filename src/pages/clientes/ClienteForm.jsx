@@ -67,62 +67,31 @@ export default function ClienteForm() {
   async function handleSubmit(e) {
     e.preventDefault(); setSaving(true)
 
-    // Limpar campos que não podem ser string vazia para colunas UUID/NUMERIC
     const payload = {
-      ...form,
+      cnpj: form.cnpj,
+      razao_social: form.razao_social,
+      nome_fantasia: form.nome_fantasia || null,
+      inscricao_municipal: form.inscricao_municipal || null,
+      inscricao_estadual: form.inscricao_estadual || null,
+      tributacao: form.tributacao || null,
+      email: form.email || null,
+      telefone: form.telefone || null,
+      endereco: form.endereco || null,
+      data_entrada: form.data_entrada || null,
+      aberto_pelo_escritorio: form.aberto_pelo_escritorio || null,
+      status: form.status,
+      portal_credentials: form.portal_credentials,
+      setores_responsaveis: form.setores_responsaveis,
       honorario_valor: form.honorario_valor ? Number(form.honorario_valor) : null,
       honorario_dia: form.honorario_dia ? Number(form.honorario_dia) : 5,
-      // Remover id do payload para não sobrescrever a PK
-      id: undefined,
-      created_at: undefined,
-      updated_at: undefined,
     }
 
-    let clienteId = id
     if (isEdit) {
-      const { error: errCliente } = await supabase.from('clients').update(payload).eq('id', id)
-      if (errCliente) { alert('Erro ao salvar cliente: ' + errCliente.message); setSaving(false); return }
+      const { error } = await supabase.from('clients').update(payload).eq('id', id)
+      if (error) { alert('Erro ao salvar cliente: ' + error.message); setSaving(false); return }
     } else {
-      const { data, error: errCliente } = await supabase.from('clients').insert(payload).select('id').single()
-      if (errCliente) { alert('Erro ao cadastrar cliente: ' + errCliente.message); setSaving(false); return }
-      clienteId = data?.id
-    }
-
-    // Sincronizar honorário como transação recorrente
-    if (clienteId && Number(form.honorario_valor) > 0) {
-      const hoje = new Date()
-      const ano = hoje.getFullYear()
-      const mes = String(hoje.getMonth() + 1).padStart(2, '0')
-      const dia = String(Math.min(Number(form.honorario_dia) || 5, 28)).padStart(2, '0')
-      const dueDate = `${ano}-${mes}-${dia}`
-
-      // Verifica se já existe honorário recorrente para esse cliente
-      const { data: existingList } = await supabase
-        .from('financial_transactions')
-        .select('id')
-        .eq('client_id', clienteId)
-        .eq('is_recurring', true)
-        .eq('category', 'Honorários')
-
-      const existing = existingList?.[0] || null
-
-      if (existing) {
-        await supabase.from('financial_transactions')
-          .update({ amount: Number(form.honorario_valor), due_date: dueDate })
-          .eq('id', existing.id)
-      } else {
-        const { error: errHon } = await supabase.from('financial_transactions').insert({
-          type: 'receita',
-          description: 'Honorários',
-          amount: Number(form.honorario_valor),
-          due_date: dueDate,
-          status: 'pendente',
-          category: 'Honorários',
-          client_id: clienteId,
-          is_recurring: true,
-        })
-        if (errHon) { alert('Cliente salvo, mas erro ao criar honorário: ' + errHon.message); setSaving(false); navigate('/clientes'); return }
-      }
+      const { error } = await supabase.from('clients').insert(payload)
+      if (error) { alert('Erro ao cadastrar cliente: ' + error.message); setSaving(false); return }
     }
 
     setSaving(false)
