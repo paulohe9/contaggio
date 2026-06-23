@@ -19,7 +19,7 @@ export default function Solicitacoes() {
   const [filtroCliente, setFiltroCliente] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ client_id: '', title: '', description: '', status: 'aberta' })
+  const [form, setForm] = useState({ client_id: '', title: '', description: '', status: 'aberta', prazo: '' })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -43,7 +43,7 @@ export default function Solicitacoes() {
 
   async function salvar(e) {
     e.preventDefault(); setSaving(true)
-    await supabase.from('client_requests').insert({ ...form, author: profile?.name || 'Sistema' })
+    await supabase.from('client_requests').insert({ ...form, prazo: form.prazo || null, author: profile?.name || 'Sistema' })
     if (form.client_id) {
       await supabase.from('client_observations').insert({
         client_id: form.client_id,
@@ -52,7 +52,7 @@ export default function Solicitacoes() {
       })
     }
     setSaving(false); setShowModal(false)
-    setForm({ client_id: '', title: '', description: '', status: 'aberta' })
+    setForm({ client_id: '', title: '', description: '', status: 'aberta', prazo: '' })
     fetchTudo()
   }
 
@@ -123,8 +123,13 @@ export default function Solicitacoes() {
                 </Link>
               )}
               {s.description && <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0', lineHeight: 1.5 }}>{s.description}</p>}
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
-                {s.author} · {format(parseISO(s.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span>{s.author} · {format(parseISO(s.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                {s.prazo && (
+                  <span style={{ background: new Date(s.prazo) < new Date() && s.status !== 'concluida' ? '#fef2f2' : '#eff6ff', color: new Date(s.prazo) < new Date() && s.status !== 'concluida' ? '#dc2626' : '#2563eb', border: `1px solid ${new Date(s.prazo) < new Date() && s.status !== 'concluida' ? '#fecaca' : '#bfdbfe'}`, borderRadius: 6, padding: '2px 8px', fontWeight: 600, fontSize: 11 }}>
+                    📅 Prazo: {format(parseISO(s.prazo), 'dd/MM/yyyy', { locale: ptBR })}
+                  </span>
+                )}
               </div>
             </div>
             {s.status !== 'concluida' && s.status !== 'cancelada' && (
@@ -148,10 +153,13 @@ export default function Solicitacoes() {
           </Select>
           <Input label="Título *" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Ex: Certidão negativa, parcelamento..." required />
           <Textarea label="Descrição" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3} placeholder="Detalhes da solicitação..." />
-          <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-            <option value="aberta">Aberta</option>
-            <option value="em_andamento">Em andamento</option>
-          </Select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+              <option value="aberta">Aberta</option>
+              <option value="em_andamento">Em andamento</option>
+            </Select>
+            <Input label="Prazo" type="date" value={form.prazo} onChange={e => setForm(f => ({ ...f, prazo: e.target.value }))} />
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Btn>
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Registrar Solicitação'}</Btn>
