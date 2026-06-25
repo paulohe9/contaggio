@@ -26,6 +26,7 @@ export default function Obrigacoes() {
   const [filtroStatus, setFiltroStatus] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [editandoTemplateId, setEditandoTemplateId] = useState(null)
   const [showGerarModal, setShowGerarModal] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [showHistoricoModal, setShowHistoricoModal] = useState(false)
@@ -66,10 +67,31 @@ export default function Obrigacoes() {
 
   async function salvarTemplate(e) {
     e.preventDefault(); setSaving(true)
-    await supabase.from('obligation_templates').insert({ ...tplForm, due_day: Number(tplForm.due_day) })
-    setSaving(false); setShowTemplateModal(false)
+    const payload = { ...tplForm, due_day: Number(tplForm.due_day) }
+    if (editandoTemplateId) {
+      await supabase.from('obligation_templates').update(payload).eq('id', editandoTemplateId)
+    } else {
+      await supabase.from('obligation_templates').insert(payload)
+    }
+    setSaving(false); setShowTemplateModal(false); setEditandoTemplateId(null)
     setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' })
     fetchTudo()
+  }
+
+  function abrirEdicaoTemplate(t) {
+    setTplForm({
+      name: t.name || '',
+      description: t.description || '',
+      tributacao: t.tributacao || 'simples_nacional',
+      periodicity: t.periodicity || 'mensal',
+      due_day: String(t.due_day || '15'),
+      category: t.category || '',
+      enviar_cliente: t.enviar_cliente || false,
+      email_subject: t.email_subject || '',
+      email_template: t.email_template || '',
+    })
+    setEditandoTemplateId(t.id)
+    setShowTemplateModal(true)
   }
 
   async function excluirTemplate(id) {
@@ -329,7 +351,10 @@ export default function Obrigacoes() {
                   <div key={t.id} style={{ background: 'white', borderRadius: 14, border: '1px solid #e2e8f0', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                       <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{t.name}</div>
-                      <button onClick={() => excluirTemplate(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11, padding: 2, flexShrink: 0 }}>✕</button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => abrirEdicaoTemplate(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontSize: 11, padding: '2px 6px', borderRadius: 4 }} title="Editar">✏️</button>
+                        <button onClick={() => excluirTemplate(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11, padding: 2, flexShrink: 0 }} title="Excluir">✕</button>
+                      </div>
                     </div>
                     {t.description && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.4 }}>{t.description}</div>}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -379,8 +404,8 @@ export default function Obrigacoes() {
         </form>
       </Modal>
 
-      {/* Modal Novo Template */}
-      <Modal open={showTemplateModal} onClose={() => setShowTemplateModal(false)} title="Novo Modelo de Obrigação" size="lg">
+      {/* Modal Novo/Editar Template */}
+      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
         <form onSubmit={salvarTemplate}>
           <Input label="Nome da obrigação *" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: DAS Simples Nacional, DCTF, eSocial..." required />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -412,8 +437,8 @@ export default function Obrigacoes() {
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-            <Btn variant="secondary" onClick={() => setShowTemplateModal(false)}>Cancelar</Btn>
-            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Modelo'}</Btn>
+            <Btn variant="secondary" onClick={() => { setShowTemplateModal(false); setEditandoTemplateId(null) }}>Cancelar</Btn>
+            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : editandoTemplateId ? 'Salvar Alterações' : 'Salvar Modelo'}</Btn>
           </div>
         </form>
       </Modal>
