@@ -208,8 +208,10 @@ export default function Layout({ children }) {
         </header>
 
         {/* Page content */}
-        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 28px', background: '#f4f6f9' }}>
-          {children}
+        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 28px', background: '#f4f6f9', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            {children}
+          </div>
         </main>
       </div>
     </div>
