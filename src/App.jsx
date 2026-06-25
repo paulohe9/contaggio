@@ -12,6 +12,7 @@ import Legalizacao from './pages/legalizacao/Legalizacao'
 import Solicitacoes from './pages/solicitacoes/Solicitacoes'
 import Usuarios from './pages/Usuarios'
 import AcessoEmail from './pages/AcessoEmail'
+import Relatorios from './pages/relatorios/Relatorios'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -41,6 +42,7 @@ function AppRoutes() {
               <Route path="/obrigacoes" element={<Obrigacoes />} />
               <Route path="/legalizacao" element={<Legalizacao />} />
               <Route path="/solicitacoes" element={<Solicitacoes />} />
+              <Route path="/relatorios" element={<Relatorios />} />
               <Route path="/usuarios" element={<Usuarios />} />
             </Routes>
           </Layout>

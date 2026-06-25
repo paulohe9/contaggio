@@ -10,6 +10,7 @@ const emptyForm = {
   inscricao_estadual: '', tributacao: '', data_entrada: '', aberto_pelo_escritorio: '',
   status: 'ativo', email: '', telefone: '', endereco: '', portal_credentials: [],
   setores_responsaveis: {}, honorario_valor: '', honorario_dia: '5',
+  data_saida: '', motivo_saida: '',
 }
 
 const SETORES = [
@@ -51,6 +52,8 @@ export default function ClienteForm() {
       setores_responsaveis: data.setores_responsaveis || {},
       honorario_valor: data.honorario_valor || '',
       honorario_dia: data.honorario_dia || '5',
+      data_saida: data.data_saida || '',
+      motivo_saida: data.motivo_saida || '',
     })
     setLoading(false)
   }
@@ -108,6 +111,8 @@ export default function ClienteForm() {
       data_entrada: form.data_entrada || null,
       aberto_pelo_escritorio: form.aberto_pelo_escritorio || null,
       status: form.status,
+      data_saida: form.status !== 'ativo' ? (form.data_saida || null) : null,
+      motivo_saida: form.status !== 'ativo' ? (form.motivo_saida || null) : null,
       portal_credentials: form.portal_credentials,
       setores_responsaveis: form.setores_responsaveis,
       honorario_valor: form.honorario_valor ? Number(form.honorario_valor) : null,
@@ -198,6 +203,25 @@ export default function ClienteForm() {
               <option value="suspenso">Suspenso</option>
             </Select>
           </div>
+          {form.status !== 'ativo' && (
+            <div style={{ marginTop: 14, background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '16px 18px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', marginBottom: 12 }}>⚠️ Cliente Inativo / Suspenso — Dados de Saída</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Data de Saída</label>
+                  <input type="date" value={form.data_saida} onChange={e => set('data_saida', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #fca5a5', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Obrigações serão geradas somente até esta data</div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Motivo da Saída</label>
+                  <input value={form.motivo_saida} onChange={e => set('motivo_saida', e.target.value)}
+                    placeholder="Ex: Encerramento da empresa, mudança de escritório..."
+                    style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #fca5a5', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+                </div>
+              </div>
+            </div>
+          )}
         </Section>
 
         {/* Honorários */}

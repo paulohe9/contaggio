@@ -152,10 +152,27 @@ export default function Financeiro() {
 
   const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
+  // Filtros
+  const [busca, setBusca] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroStatus2, setFiltroStatus2] = useState('')
+  const [filtroDataIni, setFiltroDataIni] = useState('')
+  const [filtroDataFim, setFiltroDataFim] = useState('')
+
+  const transacoesFiltradas = transacoes.filter(t => {
+    const q = busca.toLowerCase()
+    const matchBusca = !busca || t.description?.toLowerCase().includes(q) || t.clients?.razao_social?.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q)
+    const matchTipo = !filtroTipo || t.type === filtroTipo
+    const matchStatus = !filtroStatus2 || t.status === filtroStatus2
+    const matchIni = !filtroDataIni || (t.due_date && t.due_date >= filtroDataIni)
+    const matchFim = !filtroDataFim || (t.due_date && t.due_date <= filtroDataFim)
+    return matchBusca && matchTipo && matchStatus && matchIni && matchFim
+  })
+
   const tabs = [
     { key: 'visao_geral', label: 'Visão Geral', icon: '📊' },
     { key: 'contas', label: `Contas (${contas.length})`, icon: '🏦' },
-    { key: 'transacoes', label: `Movimentações (${transacoes.length})`, icon: '💳' },
+    { key: 'transacoes', label: `Movimentações (${transacoesFiltradas.length})`, icon: '💳' },
   ]
 
   return (
@@ -191,12 +208,43 @@ export default function Financeiro() {
 
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
+      {/* Filtros globais */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, marginTop: 4 }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 14 }}>🔍</span>
+          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por descrição, cliente, categoria..."
+            style={{ width: '100%', padding: '8px 10px 8px 32px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+        </div>
+        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
+          <option value="">Todos os tipos</option>
+          <option value="receber">A Receber</option>
+          <option value="pagar">A Pagar</option>
+          <option value="transferencia">Transferência</option>
+        </select>
+        <select value={filtroStatus2} onChange={e => setFiltroStatus2(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
+          <option value="">Todos os status</option>
+          <option value="pendente">Pendente</option>
+          <option value="pago">Pago</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+        <input type="date" value={filtroDataIni} onChange={e => setFiltroDataIni(e.target.value)} title="Vencimento de"
+          style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
+        <input type="date" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)} title="Vencimento até"
+          style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
+        {(busca || filtroTipo || filtroStatus2 || filtroDataIni || filtroDataFim) && (
+          <button onClick={() => { setBusca(''); setFiltroTipo(''); setFiltroStatus2(''); setFiltroDataIni(''); setFiltroDataFim('') }}
+            style={{ padding: '8px 14px', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 12, background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}>
+            Limpar filtros
+          </button>
+        )}
+      </div>
+
       {/* Visão Geral */}
       {tab === 'visao_geral' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20 }}>
             <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 14, fontSize: 14 }}>Últimas Movimentações</div>
-            {transacoes.slice(0, 8).map(t => (
+            {transacoesFiltradas.slice(0, 8).map(t => (
               <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f8fafc' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description}</div>
@@ -210,7 +258,7 @@ export default function Financeiro() {
                 </div>
               </div>
             ))}
-            {transacoes.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 24 }}>Nenhuma movimentação registrada.</div>}
+            {transacoesFiltradas.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 24 }}>Nenhuma movimentação encontrada.</div>}
           </div>
 
           <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20 }}>
@@ -280,7 +328,7 @@ export default function Financeiro() {
                   <div style={{ fontSize: 36, marginBottom: 8 }}>💳</div>
                   <div style={{ fontWeight: 600, color: '#475569' }}>Nenhuma movimentação registrada</div>
                 </td></tr>
-              ) : transacoes.map(t => {
+              ) : transacoesFiltradas.map(t => {
                 const atrasado = t.status === 'pendente' && t.due_date && new Date(t.due_date) < hoje
                 const pgtoAtrasado = t.data_pagamento && t.due_date && new Date(t.data_pagamento) > new Date(t.due_date)
                 return (

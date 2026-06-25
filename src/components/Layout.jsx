@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, Users, Wallet, ClipboardList, Scale, UserCog,
-  ChevronLeft, ChevronRight, LogOut, Building2, Inbox
+  ChevronLeft, ChevronRight, LogOut, Building2, Inbox, BarChart2
 } from 'lucide-react'
 
 const G = '#C9960A'   // dourado Aggio
@@ -18,6 +18,7 @@ const navItems = [
   { path: '/obrigacoes', label: 'Obrigações', icon: ClipboardList },
   { path: '/solicitacoes', label: 'Solicitações', icon: Inbox },
   { path: '/legalizacao', label: 'Legalização', icon: Scale },
+  { path: '/relatorios', label: 'Relatórios', icon: BarChart2 },
 ]
 
 const roleLabel = { admin: 'Admin', gerente: 'Gerente', user: 'Usuário' }
