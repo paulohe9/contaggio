@@ -11,6 +11,7 @@ import Obrigacoes from './pages/obrigacoes/Obrigacoes'
 import Legalizacao from './pages/legalizacao/Legalizacao'
 import Solicitacoes from './pages/solicitacoes/Solicitacoes'
 import Usuarios from './pages/Usuarios'
+import AcessoEmail from './pages/AcessoEmail'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -26,6 +27,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/acesso/:token" element={<AcessoEmail />} />
       <Route path="/*" element={
         <PrivateRoute>
           <Layout>

@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { format, parseISO, addMonths, setDate } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBar } from '../../components/ui'
-import { Plus, Settings, Zap } from 'lucide-react'
+import { Plus, Settings, Zap, Mail, History } from 'lucide-react'
 
 const statusCor = { pendente: 'yellow', em_andamento: 'blue', concluida: 'green', atrasada: 'red', cancelada: 'slate' }
 const tribLabel = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI', todos: 'Todos os regimes' }
@@ -27,6 +27,12 @@ export default function Obrigacoes() {
   const [showModal, setShowModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [showGerarModal, setShowGerarModal] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [showHistoricoModal, setShowHistoricoModal] = useState(false)
+  const [emailTarget, setEmailTarget] = useState(null)
+  const [emailForm, setEmailForm] = useState({ sent_to: '', subject: '', message: '' })
+  const [emailLogs, setEmailLogs] = useState([])
+  const [sendingEmail, setSendingEmail] = useState(false)
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
@@ -114,6 +120,51 @@ export default function Obrigacoes() {
     setSaving(false); setShowGerarModal(false)
     fetchTudo()
     alert(`${registros.length} obrigação(ões) gerada(s) com sucesso!`)
+  }
+
+  async function abrirEmailModal(o) {
+    setEmailTarget(o)
+    // Pré-busca e-mail do cliente
+    const { data: cli } = await supabase.from('clients').select('email, razao_social').eq('id', o.client_id).single()
+    setEmailForm({
+      sent_to: cli?.email || '',
+      subject: `Obrigação: ${o.title}`,
+      message: `Prezado(a),\n\nInformamos que há uma obrigação pendente referente a ${o.title}.\n\nData limite: ${o.due_date ? format(parseISO(o.due_date), "dd/MM/yyyy") : 'não definida'}.\n\nClique no botão abaixo para visualizar os detalhes.\n\nAtenciosamente,\nAggio Contábil`,
+    })
+    setShowEmailModal(true)
+  }
+
+  async function enviarEmail(e) {
+    e.preventDefault()
+    setSendingEmail(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('send-obligation-email', {
+        body: {
+          obligation_id: emailTarget.id,
+          client_id: emailTarget.client_id,
+          sent_to: emailForm.sent_to,
+          subject: emailForm.subject,
+          message: emailForm.message,
+        },
+      })
+      if (error || !data?.ok) throw new Error(data?.error || 'Erro ao enviar')
+      alert('E-mail enviado com sucesso!')
+      setShowEmailModal(false)
+    } catch (err) {
+      alert('Erro ao enviar e-mail: ' + err.message)
+    }
+    setSendingEmail(false)
+  }
+
+  async function abrirHistorico(o) {
+    setEmailTarget(o)
+    const { data } = await supabase
+      .from('obligation_email_logs')
+      .select('*')
+      .eq('obligation_id', o.id)
+      .order('sent_at', { ascending: false })
+    setEmailLogs(data || [])
+    setShowHistoricoModal(true)
   }
 
   async function alterarStatus(id, status) {
@@ -209,6 +260,17 @@ export default function Obrigacoes() {
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{format(parseISO(o.due_date), 'dd/MM/yyyy')}</div>
                     </div>
                   )}
+                  {/* Botões de e-mail */}
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => abrirEmailModal(o)} title="Enviar e-mail"
+                      style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                      <Mail size={13} />
+                    </button>
+                    <button onClick={() => abrirHistorico(o)} title="Histórico de e-mails"
+                      style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                      <History size={13} />
+                    </button>
+                  </div>
                   {o.status !== 'concluida' && o.status !== 'cancelada' && (
                     <select value={o.status} onChange={e => alterarStatus(o.id, e.target.value)}
                       style={{ fontSize: 11, border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', cursor: 'pointer', background: 'white' }}>
@@ -321,6 +383,85 @@ export default function Obrigacoes() {
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Modelo'}</Btn>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Enviar E-mail */}
+      <Modal open={showEmailModal} onClose={() => setShowEmailModal(false)} title="Enviar E-mail ao Cliente" size="lg">
+        <form onSubmit={enviarEmail}>
+          {emailTarget && (
+            <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#475569', border: '1px solid #e2e8f0' }}>
+              📋 <strong>{emailTarget.title}</strong> · {emailTarget.clients?.razao_social}
+            </div>
+          )}
+          <Input label="Destinatário (e-mail) *" type="email" value={emailForm.sent_to} onChange={e => setEmailForm(f => ({ ...f, sent_to: e.target.value }))} placeholder="cliente@email.com" required />
+          <Input label="Assunto *" value={emailForm.subject} onChange={e => setEmailForm(f => ({ ...f, subject: e.target.value }))} required />
+          <Textarea label="Mensagem *" value={emailForm.message} onChange={e => setEmailForm(f => ({ ...f, message: e.target.value }))} rows={6} required />
+          <div style={{ background: '#fffbeb', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#92400e', border: '1px solid #fde68a', marginBottom: 8 }}>
+            💡 Um link de rastreamento será incluído automaticamente no e-mail. Você poderá ver quando o cliente acessar.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            <Btn variant="secondary" onClick={() => setShowEmailModal(false)}>Cancelar</Btn>
+            <Btn type="submit" disabled={sendingEmail}><Mail size={13} /> {sendingEmail ? 'Enviando...' : 'Enviar E-mail'}</Btn>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Histórico de E-mails */}
+      <Modal open={showHistoricoModal} onClose={() => setShowHistoricoModal(false)} title="Histórico de E-mails" size="lg">
+        {emailTarget && (
+          <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#475569', border: '1px solid #e2e8f0' }}>
+            📋 <strong>{emailTarget.title}</strong> · {emailTarget.clients?.razao_social}
+          </div>
+        )}
+        {emailLogs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>
+            <Mail size={32} style={{ marginBottom: 10, opacity: 0.4 }} />
+            <div style={{ fontWeight: 600 }}>Nenhum e-mail enviado ainda</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {emailLogs.map(log => (
+              <div key={log.id} style={{ background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{log.subject}</div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Para: {log.sent_to}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Enviado em</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                      {format(parseISO(log.sent_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {log.access_count === 0 ? (
+                    <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
+                      ✉️ Não visualizado
+                    </span>
+                  ) : (
+                    <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
+                      ✅ Visualizado {log.access_count}x
+                    </span>
+                  )}
+                  {log.first_accessed_at && (
+                    <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
+                      🕐 1º acesso: {format(parseISO(log.first_accessed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    </span>
+                  )}
+                  {log.last_accessed_at && log.access_count > 1 && (
+                    <span style={{ background: '#fafaf9', color: '#78716c', border: '1px solid #e7e5e4', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
+                      Último: {format(parseISO(log.last_accessed_at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <Btn variant="secondary" onClick={() => setShowHistoricoModal(false)}>Fechar</Btn>
+        </div>
       </Modal>
 
       {/* Modal Gerar Obrigações */}
