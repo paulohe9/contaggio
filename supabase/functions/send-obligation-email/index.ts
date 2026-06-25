@@ -10,7 +10,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { obligation_id, client_id, sent_to, subject, message } = await req.json()
+    const { obligation_id, client_id, sent_to, subject, message, attachments } = await req.json()
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -48,6 +48,16 @@ serve(async (req) => {
           <td style="padding:36px">
             <p style="color:#1e293b;font-size:16px;font-weight:700;margin:0 0 16px">${subject}</p>
             <div style="color:#475569;font-size:14px;line-height:1.7;white-space:pre-wrap">${message}</div>
+            ${attachments && attachments.length > 0 ? `
+            <!-- Anexos -->
+            <div style="margin:24px 0;padding:16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0">
+              <p style="color:#475569;font-size:13px;font-weight:700;margin:0 0 12px">📎 Documentos Anexados</p>
+              ${attachments.map((a: { name: string; url: string }) => `
+              <a href="${a.url}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:white;border:1px solid #e2e8f0;border-radius:8px;text-decoration:none;margin-bottom:8px">
+                <span style="font-size:18px">📄</span>
+                <span style="color:#2563eb;font-size:13px;font-weight:600">${a.name}</span>
+              </a>`).join('')}
+            </div>` : ''}
             <!-- CTA -->
             <div style="text-align:center;margin:32px 0">
               <a href="${trackingUrl}"
@@ -72,19 +82,37 @@ serve(async (req) => {
 </body>
 </html>`
 
+    // Monta lista de anexos para Resend (busca conteúdo de cada URL)
+    const resendAttachments = []
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        try {
+          const res = await fetch(att.url)
+          const buf = await res.arrayBuffer()
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+          resendAttachments.push({ filename: att.name, content: base64 })
+        } catch {
+          // Se falhar ao buscar um anexo, ignora e continua
+        }
+      }
+    }
+
     // Envia via Resend
+    const payload: Record<string, unknown> = {
+      from: 'Aggio Contábil <onboarding@resend.dev>',
+      to: [sent_to],
+      subject,
+      html: emailBody,
+    }
+    if (resendAttachments.length > 0) payload.attachments = resendAttachments
+
     const resendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: 'Aggio Contábil <onboarding@resend.dev>',
-        to: [sent_to],
-        subject,
-        html: emailBody,
-      }),
+      body: JSON.stringify(payload),
     })
 
     const resendData = await resendRes.json()

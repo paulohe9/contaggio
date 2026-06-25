@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { format, parseISO, addMonths, setDate } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBar } from '../../components/ui'
-import { Plus, Settings, Zap, Mail, History } from 'lucide-react'
+import { Plus, Settings, Zap, Mail, History, Paperclip, X, FileText, Upload } from 'lucide-react'
+import { useRef } from 'react'
 
 const statusCor = { pendente: 'yellow', em_andamento: 'blue', concluida: 'green', atrasada: 'red', cancelada: 'slate' }
 const tribLabel = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI', todos: 'Todos os regimes' }
@@ -34,6 +35,8 @@ export default function Obrigacoes() {
   const [emailForm, setEmailForm] = useState({ sent_to: '', subject: '', message: '' })
   const [emailLogs, setEmailLogs] = useState([])
   const [sendingEmail, setSendingEmail] = useState(false)
+  const [anexos, setAnexos] = useState([]) // { file, name, size, uploading, url, error }
+  const anexosRef = useRef(null)
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
@@ -197,13 +200,35 @@ export default function Obrigacoes() {
             .replace('{data_limite}', dataLimite)
         : `Prezado(a),\n\nInformamos que há uma obrigação pendente referente a ${o.title}.\n\nData limite: ${dataLimite}.\n\nClique no botão abaixo para visualizar os detalhes.\n\nAtenciosamente,\nAggio Contábil`,
     })
+    setAnexos([])
     setShowEmailModal(true)
+  }
+
+  async function adicionarAnexos(files) {
+    const novos = Array.from(files).map(f => ({ file: f, name: f.name, size: f.size, uploading: true, url: null, error: null }))
+    setAnexos(prev => [...prev, ...novos])
+    for (let i = 0; i < novos.length; i++) {
+      const f = novos[i].file
+      const path = `obrigacoes/${emailTarget.id}/${Date.now()}_${f.name}`
+      const { data, error } = await supabase.storage.from('obligation-files').upload(path, f, { upsert: true })
+      if (error) {
+        setAnexos(prev => prev.map(a => a.name === f.name && a.uploading ? { ...a, uploading: false, error: error.message } : a))
+      } else {
+        const { data: urlData } = supabase.storage.from('obligation-files').getPublicUrl(path)
+        setAnexos(prev => prev.map(a => a.name === f.name && a.uploading ? { ...a, uploading: false, url: urlData.publicUrl } : a))
+      }
+    }
+  }
+
+  function removerAnexo(idx) {
+    setAnexos(prev => prev.filter((_, i) => i !== idx))
   }
 
   async function enviarEmail(e) {
     e.preventDefault()
     setSendingEmail(true)
     try {
+      const uploadedUrls = anexos.filter(a => a.url).map(a => ({ name: a.name, url: a.url }))
       const { data, error } = await supabase.functions.invoke('send-obligation-email', {
         body: {
           obligation_id: emailTarget.id,
@@ -211,6 +236,7 @@ export default function Obrigacoes() {
           sent_to: emailForm.sent_to,
           subject: emailForm.subject,
           message: emailForm.message,
+          attachments: uploadedUrls,
         },
       })
       if (error || !data?.ok) throw new Error(data?.error || 'Erro ao enviar')
@@ -507,12 +533,48 @@ export default function Obrigacoes() {
           <Input label="Destinatário (e-mail) *" type="email" value={emailForm.sent_to} onChange={e => setEmailForm(f => ({ ...f, sent_to: e.target.value }))} placeholder="cliente@email.com" required />
           <Input label="Assunto *" value={emailForm.subject} onChange={e => setEmailForm(f => ({ ...f, subject: e.target.value }))} required />
           <Textarea label="Mensagem *" value={emailForm.message} onChange={e => setEmailForm(f => ({ ...f, message: e.target.value }))} rows={6} required />
+          {/* Área de Anexos */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <Paperclip size={12} style={{ display: 'inline', marginRight: 4 }} />Anexos
+            </div>
+            <div
+              onClick={() => anexosRef.current?.click()}
+              onDragOver={e => { e.preventDefault(); e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#3b82f6' }}
+              onDragLeave={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0' }}
+              onDrop={e => { e.preventDefault(); e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; adicionarAnexos(e.dataTransfer.files) }}
+              style={{ border: '2px dashed #e2e8f0', borderRadius: 10, padding: '14px', textAlign: 'center', cursor: 'pointer', background: '#f8fafc', transition: 'all 0.15s', marginBottom: anexos.length > 0 ? 10 : 0 }}
+            >
+              <Upload size={18} style={{ color: '#94a3b8', marginBottom: 4 }} />
+              <div style={{ fontSize: 12, color: '#64748b' }}>Clique ou arraste arquivos aqui</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>PDF, Word, Excel, imagens...</div>
+              <input ref={anexosRef} type="file" multiple style={{ display: 'none' }} onChange={e => adicionarAnexos(e.target.files)} />
+            </div>
+            {anexos.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {anexos.map((a, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: a.error ? '#fef2f2' : a.uploading ? '#f0f9ff' : '#f0fdf4', border: `1px solid ${a.error ? '#fecaca' : a.uploading ? '#bae6fd' : '#bbf7d0'}`, borderRadius: 8, padding: '8px 12px' }}>
+                    <FileText size={14} style={{ color: a.error ? '#dc2626' : a.uploading ? '#0284c7' : '#16a34a', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                      <div style={{ fontSize: 10, color: '#64748b' }}>
+                        {a.uploading ? 'Enviando...' : a.error ? `Erro: ${a.error}` : `${(a.size / 1024).toFixed(0)} KB · Pronto`}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => removerAnexo(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex', alignItems: 'center' }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ background: '#fffbeb', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#92400e', border: '1px solid #fde68a', marginBottom: 8 }}>
             💡 Um link de rastreamento será incluído automaticamente no e-mail. Você poderá ver quando o cliente acessar.
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowEmailModal(false)}>Cancelar</Btn>
-            <Btn type="submit" disabled={sendingEmail}><Mail size={13} /> {sendingEmail ? 'Enviando...' : 'Enviar E-mail'}</Btn>
+            <Btn type="submit" disabled={sendingEmail || anexos.some(a => a.uploading)}><Mail size={13} /> {sendingEmail ? 'Enviando...' : 'Enviar E-mail'}</Btn>
           </div>
         </form>
       </Modal>
