@@ -39,19 +39,12 @@ export default function Usuarios() {
   async function criarUsuario(e) {
     e.preventDefault(); setSaving(true); setError('')
     try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/admin/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_SERVICE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_SERVICE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ email: form.email, password: form.password, email_confirm: true }),
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: { name: form.name, email: form.email, password: form.password, role: form.role },
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message || 'Erro ao criar usuário')
+      if (error) throw new Error(error.message)
+      if (!data?.ok) throw new Error(data?.error || 'Erro ao criar usuário')
 
-      await supabase.from('users').upsert({ id: data.id, email: form.email, name: form.name, role: form.role })
       setSaving(false); setShowModal(false)
       setForm({ name: '', email: '', password: '', role: 'user' })
       fetchUsuarios()
