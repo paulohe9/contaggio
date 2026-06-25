@@ -36,8 +36,8 @@ export default function Obrigacoes() {
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
-  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '' })
-  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '' })
+  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
+  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -60,7 +60,7 @@ export default function Obrigacoes() {
     e.preventDefault(); setSaving(true)
     await supabase.from('obligations').insert(form)
     setSaving(false); setShowModal(false)
-    setForm({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '' })
+    setForm({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
     fetchTudo()
   }
 
@@ -68,7 +68,7 @@ export default function Obrigacoes() {
     e.preventDefault(); setSaving(true)
     await supabase.from('obligation_templates').insert({ ...tplForm, due_day: Number(tplForm.due_day) })
     setSaving(false); setShowTemplateModal(false)
-    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '' })
+    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false })
     fetchTudo()
   }
 
@@ -110,6 +110,7 @@ export default function Obrigacoes() {
           periodicity: tpl.periodicity,
           category: tpl.category || '',
           responsible_id: responsibleId,
+          enviar_cliente: tpl.enviar_cliente || false,
         })
       }
     }
@@ -260,17 +261,23 @@ export default function Obrigacoes() {
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{format(parseISO(o.due_date), 'dd/MM/yyyy')}</div>
                     </div>
                   )}
-                  {/* Botões de e-mail */}
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={() => abrirEmailModal(o)} title="Enviar e-mail"
-                      style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                      <Mail size={13} />
-                    </button>
-                    <button onClick={() => abrirHistorico(o)} title="Histórico de e-mails"
-                      style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                      <History size={13} />
-                    </button>
-                  </div>
+                  {/* Botões de e-mail — só para obrigações marcadas para enviar ao cliente */}
+                  {o.enviar_cliente ? (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => abrirEmailModal(o)} title="Enviar e-mail"
+                        style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                        <Mail size={13} />
+                      </button>
+                      <button onClick={() => abrirHistorico(o)} title="Histórico de e-mails"
+                        style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                        <History size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 10, color: '#94a3b8', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, padding: '3px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      Interno
+                    </span>
+                  )}
                   {o.status !== 'concluida' && o.status !== 'cancelada' && (
                     <select value={o.status} onChange={e => alterarStatus(o.id, e.target.value)}
                       style={{ fontSize: 11, border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', cursor: 'pointer', background: 'white' }}>
@@ -318,6 +325,9 @@ export default function Obrigacoes() {
                       <Badge color="purple">{t.periodicity}</Badge>
                       <Badge color="blue">Dia {t.due_day}</Badge>
                       {t.category && <Badge color="slate">{t.category}</Badge>}
+                      {t.enviar_cliente
+                        ? <Badge color="green">📧 Envia ao cliente</Badge>
+                        : <Badge color="slate">🔒 Interno</Badge>}
                     </div>
                   </div>
                 ))}
@@ -350,6 +360,7 @@ export default function Obrigacoes() {
             </Select>
           </div>
           <Textarea label="Descrição" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
+          <ToggleEnviarCliente value={form.enviar_cliente} onChange={v => setForm(f => ({ ...f, enviar_cliente: v }))} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Btn>
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Btn>
@@ -378,6 +389,7 @@ export default function Obrigacoes() {
             <Input label="Categoria" value={tplForm.category} onChange={e => setTplForm(f => ({ ...f, category: e.target.value }))} placeholder="Fiscal, Trabalhista, Previdenciário..." />
           </div>
           <Textarea label="Descrição / Instrução" value={tplForm.description} onChange={e => setTplForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="Detalhes sobre a obrigação..." />
+          <ToggleEnviarCliente value={tplForm.enviar_cliente} onChange={v => setTplForm(f => ({ ...f, enviar_cliente: v }))} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowTemplateModal(false)}>Cancelar</Btn>
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Modelo'}</Btn>
@@ -489,6 +501,44 @@ export default function Obrigacoes() {
           </div>
         </form>
       </Modal>
+    </div>
+  )
+}
+
+function ToggleEnviarCliente({ value, onChange }) {
+  return (
+    <div
+      onClick={() => onChange(!value)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+        background: value ? '#f0fdf4' : '#f8fafc',
+        border: `1.5px solid ${value ? '#bbf7d0' : '#e2e8f0'}`,
+        borderRadius: 12, cursor: 'pointer', marginTop: 4, userSelect: 'none',
+        transition: 'all 0.15s',
+      }}
+    >
+      {/* Switch */}
+      <div style={{
+        width: 38, height: 22, borderRadius: 11, flexShrink: 0,
+        background: value ? '#16a34a' : '#cbd5e1',
+        position: 'relative', transition: 'background 0.2s',
+      }}>
+        <div style={{
+          position: 'absolute', top: 3, left: value ? 19 : 3,
+          width: 16, height: 16, borderRadius: '50%', background: 'white',
+          transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        }} />
+      </div>
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 13, color: value ? '#15803d' : '#475569' }}>
+          {value ? '📧 Enviar ao cliente' : '🔒 Apenas registro interno'}
+        </div>
+        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+          {value
+            ? 'O botão de e-mail ficará disponível nesta obrigação'
+            : 'Não aparecerá opção de enviar e-mail para esta obrigação'}
+        </div>
+      </div>
     </div>
   )
 }
