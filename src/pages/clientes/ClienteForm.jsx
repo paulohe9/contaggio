@@ -28,6 +28,8 @@ export default function ClienteForm() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [usuarios, setUsuarios] = useState([])
+  const [cnpjLoading, setCnpjLoading] = useState(false)
+  const [cnpjMsg, setCnpjMsg] = useState('')
 
   useEffect(() => {
     fetchUsuarios()
@@ -56,6 +58,32 @@ export default function ClienteForm() {
   function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
   function setSetor(key, value) {
     setForm(f => ({ ...f, setores_responsaveis: { ...f.setores_responsaveis, [key]: value || null } }))
+  }
+
+  async function buscarCNPJ(cnpj) {
+    const digits = cnpj.replace(/\D/g, '')
+    if (digits.length !== 14) return
+    setCnpjLoading(true)
+    setCnpjMsg('')
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`)
+      if (!res.ok) throw new Error('CNPJ não encontrado')
+      const d = await res.json()
+      const endereco = [d.logradouro, d.numero, d.complemento, d.bairro, d.municipio, d.uf, d.cep]
+        .filter(Boolean).join(', ')
+      setForm(f => ({
+        ...f,
+        razao_social: d.razao_social || f.razao_social,
+        nome_fantasia: d.nome_fantasia || f.nome_fantasia,
+        email: d.email || f.email,
+        telefone: d.ddd_telefone_1 ? d.ddd_telefone_1.replace(/(\d{2})(\d{4,5})(\d{4})/, '($1) $2-$3') : f.telefone,
+        endereco: endereco || f.endereco,
+      }))
+      setCnpjMsg('✅ Dados preenchidos automaticamente')
+    } catch {
+      setCnpjMsg('⚠️ CNPJ não encontrado na Receita Federal')
+    }
+    setCnpjLoading(false)
   }
 
   function addPortal() { setForm(f => ({ ...f, portal_credentials: [...f.portal_credentials, { ...emptyPortal }] })) }
@@ -117,7 +145,24 @@ export default function ClienteForm() {
         {/* Dados da Empresa */}
         <Section title="Dados da Empresa">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Input label="CNPJ *" value={form.cnpj} onChange={e => set('cnpj', e.target.value)} placeholder="00.000.000/0000-00" required />
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>CNPJ *</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={form.cnpj}
+                  onChange={e => { set('cnpj', e.target.value); setCnpjMsg('') }}
+                  onBlur={e => buscarCNPJ(e.target.value)}
+                  placeholder="00.000.000/0000-00"
+                  required
+                  style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, outline: 'none', color: '#1e293b', boxSizing: 'border-box' }}
+                />
+                <button type="button" onClick={() => buscarCNPJ(form.cnpj)} disabled={cnpjLoading}
+                  style={{ padding: '0 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: cnpjLoading ? '#f8fafc' : 'white', cursor: cnpjLoading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {cnpjLoading ? '...' : '🔍 Buscar'}
+                </button>
+              </div>
+              {cnpjMsg && <div style={{ fontSize: 11, marginTop: 5, color: cnpjMsg.startsWith('✅') ? '#16a34a' : '#dc2626' }}>{cnpjMsg}</div>}
+            </div>
             <Input label="Razão Social *" value={form.razao_social} onChange={e => set('razao_social', e.target.value)} required />
             <Input label="Nome Fantasia" value={form.nome_fantasia} onChange={e => set('nome_fantasia', e.target.value)} />
             <Input label="Inscrição Municipal" value={form.inscricao_municipal} onChange={e => set('inscricao_municipal', e.target.value)} />

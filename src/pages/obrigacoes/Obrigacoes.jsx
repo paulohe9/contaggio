@@ -37,7 +37,7 @@ export default function Obrigacoes() {
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
   const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
-  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false })
+  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -68,7 +68,7 @@ export default function Obrigacoes() {
     e.preventDefault(); setSaving(true)
     await supabase.from('obligation_templates').insert({ ...tplForm, due_day: Number(tplForm.due_day) })
     setSaving(false); setShowTemplateModal(false)
-    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false })
+    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' })
     fetchTudo()
   }
 
@@ -125,12 +125,23 @@ export default function Obrigacoes() {
 
   async function abrirEmailModal(o) {
     setEmailTarget(o)
-    // Pré-busca e-mail do cliente
-    const { data: cli } = await supabase.from('clients').select('email, razao_social').eq('id', o.client_id).single()
+    // Busca e-mail do cliente e template do modelo (se houver)
+    const [cliRes, tplRes] = await Promise.all([
+      supabase.from('clients').select('email, razao_social').eq('id', o.client_id).single(),
+      supabase.from('obligation_templates').select('email_subject, email_template').eq('name', o.title).maybeSingle(),
+    ])
+    const cli = cliRes.data
+    const tpl = tplRes.data
+    const dataLimite = o.due_date ? format(parseISO(o.due_date), "dd/MM/yyyy") : 'não definida'
     setEmailForm({
       sent_to: cli?.email || '',
-      subject: `Obrigação: ${o.title}`,
-      message: `Prezado(a),\n\nInformamos que há uma obrigação pendente referente a ${o.title}.\n\nData limite: ${o.due_date ? format(parseISO(o.due_date), "dd/MM/yyyy") : 'não definida'}.\n\nClique no botão abaixo para visualizar os detalhes.\n\nAtenciosamente,\nAggio Contábil`,
+      subject: tpl?.email_subject || `Obrigação: ${o.title}`,
+      message: tpl?.email_template
+        ? tpl.email_template
+            .replace('{cliente}', cli?.razao_social || '')
+            .replace('{obrigacao}', o.title)
+            .replace('{data_limite}', dataLimite)
+        : `Prezado(a),\n\nInformamos que há uma obrigação pendente referente a ${o.title}.\n\nData limite: ${dataLimite}.\n\nClique no botão abaixo para visualizar os detalhes.\n\nAtenciosamente,\nAggio Contábil`,
     })
     setShowEmailModal(true)
   }
@@ -390,6 +401,16 @@ export default function Obrigacoes() {
           </div>
           <Textarea label="Descrição / Instrução" value={tplForm.description} onChange={e => setTplForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="Detalhes sobre a obrigação..." />
           <ToggleEnviarCliente value={tplForm.enviar_cliente} onChange={v => setTplForm(f => ({ ...f, enviar_cliente: v }))} />
+          {tplForm.enviar_cliente && (
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px', marginTop: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.07em' }}>📧 Template de E-mail</div>
+              <Input label="Assunto padrão" value={tplForm.email_subject} onChange={e => setTplForm(f => ({ ...f, email_subject: e.target.value }))} placeholder={`Obrigação: ${tplForm.name || 'Nome da obrigação'}`} />
+              <Textarea label="Corpo da mensagem" value={tplForm.email_template} onChange={e => setTplForm(f => ({ ...f, email_template: e.target.value }))} rows={5} placeholder={`Prezado(a),\n\nInformamos que há uma obrigação pendente referente a {obrigacao}.\n\nData limite: {data_limite}.\n\nAtenciosamente,\nAggio Contábil`} />
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
+                Variáveis disponíveis: <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>{'{cliente}'}</code> <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>{'{obrigacao}'}</code> <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>{'{data_limite}'}</code>
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowTemplateModal(false)}>Cancelar</Btn>
             <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Modelo'}</Btn>
