@@ -137,12 +137,33 @@ export default function Obrigacoes() {
       }
     }
 
-    if (registros.length > 0) {
-      await supabase.from('obligations').insert(registros)
+    if (registros.length === 0) {
+      setSaving(false)
+      alert('Nenhuma obrigação para gerar. Verifique se há modelos e clientes cadastrados para o regime selecionado.')
+      return
     }
+
+    // Insere em lotes de 50 para evitar limite do Supabase
+    const CHUNK = 50
+    let totalInseridos = 0
+    let erros = []
+    for (let i = 0; i < registros.length; i += CHUNK) {
+      const lote = registros.slice(i, i + CHUNK)
+      const { error } = await supabase.from('obligations').insert(lote)
+      if (error) {
+        erros.push(error.message)
+      } else {
+        totalInseridos += lote.length
+      }
+    }
+
     setSaving(false); setShowGerarModal(false)
     fetchTudo()
-    alert(`${registros.length} obrigação(ões) gerada(s) com sucesso!`)
+    if (erros.length > 0) {
+      alert(`${totalInseridos} gerada(s) com sucesso.\nErro em ${erros.length} lote(s): ${erros[0]}`)
+    } else {
+      alert(`${totalInseridos} obrigação(ões) gerada(s) com sucesso!`)
+    }
   }
 
   async function abrirEmailModal(o) {
