@@ -37,8 +37,8 @@ export default function Obrigacoes() {
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
-  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
-  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' })
+  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
+  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -61,7 +61,7 @@ export default function Obrigacoes() {
     e.preventDefault(); setSaving(true)
     await supabase.from('obligations').insert(form)
     setSaving(false); setShowModal(false)
-    setForm({ client_id: '', title: '', description: '', due_date: '', data_meta: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
+    setForm({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
     fetchTudo()
   }
 
@@ -74,7 +74,7 @@ export default function Obrigacoes() {
       await supabase.from('obligation_templates').insert(payload)
     }
     setSaving(false); setShowTemplateModal(false); setEditandoTemplateId(null)
-    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' })
+    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
     fetchTudo()
   }
 
@@ -89,6 +89,8 @@ export default function Obrigacoes() {
       enviar_cliente: t.enviar_cliente || false,
       email_subject: t.email_subject || '',
       email_template: t.email_template || '',
+      competencia_offset: t.competencia_offset ?? 0,
+      meses_competencia: t.meses_competencia || [],
     })
     setEditandoTemplateId(t.id)
     setShowTemplateModal(true)
@@ -114,26 +116,35 @@ export default function Obrigacoes() {
     for (const cli of clientesFiltrados) {
       for (const tpl of tplsFiltrados) {
         const dia = Math.min(Number(tpl.due_day || 15), 28)
-        let dataVenc = setDate(hoje, dia)
-        if (dataVenc < hoje) dataVenc = addMonths(dataVenc, 1)
-        // data_meta = 3 dias antes do vencimento como sugestão
-        const dataMeta = addMonths(dataVenc, 0)
-        dataMeta.setDate(dataMeta.getDate() - 3)
-        // responsável pelo setor desta obrigação
         const sectorKey = sectorMap[tpl.category] || null
         const responsibleId = sectorKey && cli.setores_responsaveis ? cli.setores_responsaveis[sectorKey] || null : null
-        registros.push({
-          client_id: cli.id,
-          title: tpl.name,
-          description: tpl.description || '',
-          due_date: format(dataVenc, 'yyyy-MM-dd'),
-          data_meta: format(dataMeta, 'yyyy-MM-dd'),
-          status: 'pendente',
-          periodicity: tpl.periodicity,
-          category: tpl.category || '',
-          responsible_id: responsibleId,
-          enviar_cliente: tpl.enviar_cliente || false,
-        })
+
+        // Determina em quais meses gerar. Para periocidades não-mensais, usa meses_competencia se definido.
+        const meses = (tpl.periodicity !== 'mensal' && tpl.meses_competencia?.length)
+          ? tpl.meses_competencia // array de números de mês (0-11)
+          : [hoje.getMonth()]
+
+        for (const mes of meses) {
+          const anoBase = hoje.getFullYear()
+          let dataVenc = new Date(anoBase, mes, dia)
+          if (dataVenc < hoje) dataVenc = new Date(anoBase + 1, mes, dia)
+
+          const offset = Number(tpl.competencia_offset || 0)
+          const dataCompetencia = offset !== 0 ? addMonths(dataVenc, offset) : null
+
+          registros.push({
+            client_id: cli.id,
+            title: tpl.name,
+            description: tpl.description || '',
+            due_date: format(dataVenc, 'yyyy-MM-dd'),
+            status: 'pendente',
+            periodicity: tpl.periodicity,
+            category: tpl.category || '',
+            responsible_id: responsibleId,
+            enviar_cliente: tpl.enviar_cliente || false,
+            ...(dataCompetencia ? { competencia: format(dataCompetencia, 'yyyy-MM-dd') } : {}),
+          })
+        }
       }
     }
 
@@ -426,7 +437,7 @@ export default function Obrigacoes() {
       </Modal>
 
       {/* Modal Novo/Editar Template */}
-      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '' }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
+      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
         <form onSubmit={salvarTemplate}>
           <Input label="Nome da obrigação *" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: DAS Simples Nacional, DCTF, eSocial..." required />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -441,10 +452,31 @@ export default function Obrigacoes() {
               {PERIODICIDADES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </Select>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Input label="Dia de vencimento (1-28)" type="number" min="1" max="28" value={tplForm.due_day} onChange={e => setTplForm(f => ({ ...f, due_day: e.target.value }))} placeholder="15" />
-            <Input label="Categoria" value={tplForm.category} onChange={e => setTplForm(f => ({ ...f, category: e.target.value }))} placeholder="Fiscal, Trabalhista, Previdenciário..." />
+            <Select label="Competência" value={tplForm.competencia_offset} onChange={e => setTplForm(f => ({ ...f, competencia_offset: Number(e.target.value) }))}>
+              <option value={0}>Mesmo mês</option>
+              <option value={-1}>Mês anterior (-1)</option>
+              <option value={-2}>2 meses antes (-2)</option>
+              <option value={-3}>3 meses antes (-3)</option>
+            </Select>
+            <Input label="Categoria" value={tplForm.category} onChange={e => setTplForm(f => ({ ...f, category: e.target.value }))} placeholder="Fiscal, Trabalhista..." />
           </div>
+
+          {tplForm.competencia_offset !== 0 && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 14px', fontSize: 12, color: '#92400e' }}>
+              ℹ️ Competência <strong>{tplForm.competencia_offset}</strong> mês(es) em relação à data de entrega. Ex: entrega em fevereiro → competência de {tplForm.competencia_offset === -1 ? 'janeiro' : tplForm.competencia_offset === -2 ? 'dezembro' : 'novembro'}.
+            </div>
+          )}
+
+          {tplForm.periodicity !== 'mensal' && tplForm.periodicity !== 'esporadica' && (
+            <SeletorMeses
+              periodicity={tplForm.periodicity}
+              value={tplForm.meses_competencia}
+              onChange={v => setTplForm(f => ({ ...f, meses_competencia: v }))}
+            />
+          )}
+
           <Textarea label="Descrição / Instrução" value={tplForm.description} onChange={e => setTplForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="Detalhes sobre a obrigação..." />
           <ToggleEnviarCliente value={tplForm.enviar_cliente} onChange={v => setTplForm(f => ({ ...f, enviar_cliente: v }))} />
           {tplForm.enviar_cliente && (
@@ -606,6 +638,65 @@ function ToggleEnviarCliente({ value, onChange }) {
             : 'Não aparecerá opção de enviar e-mail para esta obrigação'}
         </div>
       </div>
+    </div>
+  )
+}
+
+const MESES_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+const MESES_POR_PERIODICIDADE = {
+  bimestral: { sugestao: [0, 2, 4, 6, 8, 10], label: 'Bimestral — selecione os 6 meses de entrega' },
+  trimestral: { sugestao: [2, 5, 8, 11], label: 'Trimestral — selecione os 4 meses de entrega' },
+  semestral: { sugestao: [5, 11], label: 'Semestral — selecione os 2 meses de entrega' },
+  anual: { sugestao: [11], label: 'Anual — selecione o mês de entrega' },
+}
+
+function SeletorMeses({ periodicity, value, onChange }) {
+  const info = MESES_POR_PERIODICIDADE[periodicity]
+  if (!info) return null
+
+  function toggle(m) {
+    if (value.includes(m)) onChange(value.filter(x => x !== m))
+    else onChange([...value, m].sort((a, b) => a - b))
+  }
+
+  return (
+    <div style={{ background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: 12, padding: '14px 16px', marginTop: 4 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>📅 {info.label}</span>
+        {value.length === 0 && (
+          <button type="button" onClick={() => onChange(info.sugestao)}
+            style={{ fontSize: 11, color: '#0284c7', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}>
+            Usar sugestão
+          </button>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {MESES_LABELS.map((label, i) => {
+          const sel = value.includes(i)
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => toggle(i)}
+              style={{
+                padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: sel ? '#0284c7' : 'white',
+                color: sel ? 'white' : '#64748b',
+                border: `1.5px solid ${sel ? '#0284c7' : '#e2e8f0'}`,
+                transition: 'all 0.12s',
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      {value.length > 0 && (
+        <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
+          Meses selecionados: {value.map(m => MESES_LABELS[m]).join(', ')}
+        </div>
+      )}
     </div>
   )
 }
