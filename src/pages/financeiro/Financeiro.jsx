@@ -30,11 +30,11 @@ export default function Financeiro() {
   // Reserva
   const [reservaMovements, setReservaMovements] = useState([])
   const [showReservaModal, setShowReservaModal] = useState(false)
-  const [reservaForm, setReservaForm] = useState({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '' })
+  const [reservaForm, setReservaForm] = useState({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '', bank_account_id: '' })
   // Distribuição
   const [distributions, setDistributions] = useState([])
   const [showDistModal, setShowDistModal] = useState(false)
-  const [distForm, setDistForm] = useState({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '' })
+  const [distForm, setDistForm] = useState({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '', bank_account_id: '' })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -169,10 +169,21 @@ export default function Financeiro() {
 
   async function salvarReserva(e) {
     e.preventDefault(); setSaving(true)
-    const { error } = await supabase.from('reserva_movements').insert({ ...reservaForm, amount: Number(reservaForm.amount) })
+    const { bank_account_id, ...resto } = reservaForm
+    const { error } = await supabase.from('reserva_movements').insert({ ...resto, amount: Number(reservaForm.amount) })
     if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+    // Baixa/credita na conta bancária de origem
+    if (bank_account_id) {
+      const conta = contas.find(c => c.id === bank_account_id)
+      if (conta) {
+        const delta = reservaForm.type === 'deposito' ? -Number(reservaForm.amount) : Number(reservaForm.amount)
+        const novoSaldo = Number(conta.balance) + delta
+        await supabase.from('bank_accounts').update({ balance: novoSaldo }).eq('id', bank_account_id)
+        setContas(cs => cs.map(c => c.id === bank_account_id ? { ...c, balance: novoSaldo } : c))
+      }
+    }
     setSaving(false); setShowReservaModal(false)
-    setReservaForm({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '' })
+    setReservaForm({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '', bank_account_id: '' })
     fetchTudo()
   }
 
@@ -183,10 +194,21 @@ export default function Financeiro() {
       month: monthDate, partner: p, amount: Number(distForm[p]), notes: distForm.notes || null
     }))
     for (const u of upserts) {
-      await supabase.from('profit_distributions').upsert(u, { onConflict: 'month,partner' })
+      const { error } = await supabase.from('profit_distributions').upsert(u, { onConflict: 'month,partner' })
+      if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+    }
+    // Baixa total da conta bancária de origem
+    if (distForm.bank_account_id) {
+      const conta = contas.find(c => c.id === distForm.bank_account_id)
+      if (conta) {
+        const total = upserts.reduce((s, u) => s + u.amount, 0)
+        const novoSaldo = Number(conta.balance) - total
+        await supabase.from('bank_accounts').update({ balance: novoSaldo }).eq('id', distForm.bank_account_id)
+        setContas(cs => cs.map(c => c.id === distForm.bank_account_id ? { ...c, balance: novoSaldo } : c))
+      }
     }
     setSaving(false); setShowDistModal(false)
-    setDistForm({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '' })
+    setDistForm({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '', bank_account_id: '' })
     fetchTudo()
   }
 
@@ -605,15 +627,25 @@ export default function Financeiro() {
       <Modal open={showReservaModal} onClose={() => setShowReservaModal(false)} title="Movimentar Reserva">
         <form onSubmit={salvarReserva}>
           <Select label="Tipo *" value={reservaForm.type} onChange={e => setReservaForm(f => ({ ...f, type: e.target.value }))}>
-            <option value="deposito">⬆️ Depósito (entrada na reserva)</option>
-            <option value="retirada">⬇️ Retirada (saída da reserva)</option>
+            <option value="deposito">⬆️ Depósito (transferir para reserva)</option>
+            <option value="retirada">⬇️ Retirada (transferir da reserva)</option>
+          </Select>
+          <Select label="Conta de origem *" value={reservaForm.bank_account_id} onChange={e => setReservaForm(f => ({ ...f, bank_account_id: e.target.value }))} required>
+            <option value="">Selecione a conta</option>
+            {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank} ({fmt(Number(c.balance))})</option>)}
           </Select>
           <Input label="Valor (R$) *" type="number" step="0.01" min="0" value={reservaForm.amount} onChange={e => setReservaForm(f => ({ ...f, amount: e.target.value }))} required />
           <Input label="Data *" type="date" value={reservaForm.date} onChange={e => setReservaForm(f => ({ ...f, date: e.target.value }))} required />
           <Input label="Descrição" value={reservaForm.description} onChange={e => setReservaForm(f => ({ ...f, description: e.target.value }))} placeholder="Ex: Reserva de março..." />
+          {reservaForm.bank_account_id && reservaForm.amount && (
+            <div style={{ background: reservaForm.type === 'deposito' ? '#fef3c7' : '#f0fdf4', border: `1px solid ${reservaForm.type === 'deposito' ? '#fde68a' : '#bbf7d0'}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: reservaForm.type === 'deposito' ? '#92400e' : '#166534' }}>
+              {reservaForm.type === 'deposito' ? '📉 Saldo da conta será reduzido em ' : '📈 Saldo da conta será aumentado em '}
+              <strong>{fmt(Number(reservaForm.amount))}</strong>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowReservaModal(false)}>Cancelar</Btn>
-            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Registrar'}</Btn>
+            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Registrar Transferência'}</Btn>
           </div>
         </form>
       </Modal>
@@ -626,10 +658,19 @@ export default function Financeiro() {
             <input type="month" value={distForm.month} onChange={e => setDistForm(f => ({ ...f, month: e.target.value }))}
               style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} required />
           </div>
+          <Select label="Conta de origem (débito) *" value={distForm.bank_account_id} onChange={e => setDistForm(f => ({ ...f, bank_account_id: e.target.value }))} required>
+            <option value="">Selecione a conta</option>
+            {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank} ({fmt(Number(c.balance))})</option>)}
+          </Select>
           {PARCEIROS.map(p => (
             <Input key={p} label={`${PARCEIRO_LABEL[p]} (R$)`} type="number" step="0.01" min="0"
               value={distForm[p]} onChange={e => setDistForm(f => ({ ...f, [p]: e.target.value }))} placeholder="0,00" />
           ))}
+          {distForm.bank_account_id && PARCEIROS.some(p => distForm[p]) && (
+            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#92400e' }}>
+              📉 Total debitado da conta: <strong>{fmt(PARCEIROS.reduce((s,p) => s + (Number(distForm[p]) || 0), 0))}</strong>
+            </div>
+          )}
           <Textarea label="Observações" value={distForm.notes} onChange={e => setDistForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowDistModal(false)}>Cancelar</Btn>
