@@ -229,8 +229,43 @@ export default function Obrigacoes() {
     setShowEmailModal(true)
   }
 
+  // Extrai cliente e competência do nome do arquivo
+  // Formatos suportados: "DAS - 05-2026 - EMPRESA LTDA - VENC 22-06-2026.pdf"
+  // ou "EMPRESA LTDA - DAS - 05-2026.pdf" etc.
+  function parsearNomeArquivo(filename) {
+    const nome = filename.replace(/\.[^.]+$/, '') // remove extensão
+    const info = { clienteDetectado: null, competenciaDetectada: null, vencimentoDetectado: null }
+
+    // Competência: MM-YYYY ou MM/YYYY
+    const compMatch = nome.match(/\b(0[1-9]|1[0-2])[-\/](20\d{2})\b/)
+    if (compMatch) info.competenciaDetectada = `${compMatch[1]}/${compMatch[2]}`
+
+    // Vencimento: DD-MM-YYYY ou DD/MM/YYYY (após VENC ou VEN ou VENCIMENTO)
+    const vencMatch = nome.match(/(?:VENC(?:IMENTO)?[:\s-]*)(0[1-9]|[12]\d|3[01])[-\/](0[1-9]|1[0-2])[-\/](20\d{2})/i)
+    if (vencMatch) info.vencimentoDetectado = `${vencMatch[3]}-${vencMatch[2]}-${vencMatch[1]}`
+
+    // Tenta identificar cliente comparando partes do nome com clientes cadastrados
+    const partes = nome.split(/\s*[-–]\s*/)
+    for (const parte of partes) {
+      const parteLimpa = parte.trim().toUpperCase()
+      if (parteLimpa.length < 4) continue
+      // Ignora partes que são datas ou palavras-chave
+      if (/^\d|^(DAS|DARF|GFIP|SPED|ECF|DEFIS|PGDAS|VENC|GUIA|NFE|NF)/i.test(parteLimpa)) continue
+      const clienteMatch = clientes.find(c =>
+        c.razao_social.toUpperCase().includes(parteLimpa) ||
+        parteLimpa.includes(c.razao_social.toUpperCase().split(' ').slice(0,2).join(' '))
+      )
+      if (clienteMatch) { info.clienteDetectado = clienteMatch; break }
+    }
+
+    return info
+  }
+
   async function adicionarAnexos(files) {
-    const novos = Array.from(files).map(f => ({ file: f, name: f.name, size: f.size, uploading: true, url: null, error: null }))
+    const novos = Array.from(files).map(f => {
+      const info = parsearNomeArquivo(f.name)
+      return { file: f, name: f.name, size: f.size, uploading: true, url: null, error: null, ...info }
+    })
     setAnexos(prev => [...prev, ...novos])
     for (let i = 0; i < novos.length; i++) {
       const f = novos[i].file
@@ -287,6 +322,13 @@ export default function Obrigacoes() {
   async function alterarStatus(id, status) {
     await supabase.from('obligations').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
     setObrigacoes(os => os.map(o => o.id === id ? { ...o, status } : o))
+    // Se concluída e marcada para enviar ao cliente → abre modal de e-mail automaticamente
+    if (status === 'concluida') {
+      const ob = obrigacoes.find(o => o.id === id)
+      if (ob?.enviar_cliente) {
+        setTimeout(() => abrirEmailModal({ ...ob, status: 'concluida' }), 300)
+      }
+    }
   }
 
   const tabs = [
@@ -609,17 +651,40 @@ export default function Obrigacoes() {
             {anexos.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {anexos.map((a, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: a.error ? '#fef2f2' : a.uploading ? '#f0f9ff' : '#f0fdf4', border: `1px solid ${a.error ? '#fecaca' : a.uploading ? '#bae6fd' : '#bbf7d0'}`, borderRadius: 8, padding: '8px 12px' }}>
-                    <FileText size={14} style={{ color: a.error ? '#dc2626' : a.uploading ? '#0284c7' : '#16a34a', flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
-                      <div style={{ fontSize: 10, color: '#64748b' }}>
-                        {a.uploading ? 'Enviando...' : a.error ? `Erro: ${a.error}` : `${(a.size / 1024).toFixed(0)} KB · Pronto`}
+                  <div key={idx} style={{ background: a.error ? '#fef2f2' : a.uploading ? '#f0f9ff' : '#f0fdf4', border: `1px solid ${a.error ? '#fecaca' : a.uploading ? '#bae6fd' : '#bbf7d0'}`, borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <FileText size={14} style={{ color: a.error ? '#dc2626' : a.uploading ? '#0284c7' : '#16a34a', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>
+                          {a.uploading ? 'Enviando...' : a.error ? `Erro: ${a.error}` : `${(a.size / 1024).toFixed(0)} KB · Pronto`}
+                        </div>
                       </div>
+                      <button type="button" onClick={() => removerAnexo(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex', alignItems: 'center' }}>
+                        <X size={14} />
+                      </button>
                     </div>
-                    <button type="button" onClick={() => removerAnexo(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex', alignItems: 'center' }}>
-                      <X size={14} />
-                    </button>
+                    {/* Informações detectadas automaticamente */}
+                    {!a.uploading && !a.error && (a.clienteDetectado || a.competenciaDetectada || a.vencimentoDetectado) && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, paddingTop: 6, borderTop: '1px solid #bbf7d0' }}>
+                        {a.clienteDetectado && (
+                          <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 5, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>
+                            👤 {a.clienteDetectado.razao_social}
+                          </span>
+                        )}
+                        {a.competenciaDetectada && (
+                          <span style={{ background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', borderRadius: 5, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>
+                            📅 Competência: {a.competenciaDetectada}
+                          </span>
+                        )}
+                        {a.vencimentoDetectado && (
+                          <span style={{ background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>
+                            ⚠️ Venc: {a.vencimentoDetectado.split('-').reverse().join('/')}
+                          </span>
+                        )}
+                        {!a.clienteDetectado && !a.competenciaDetectada && <span style={{ fontSize: 10, color: '#94a3b8' }}>Não foi possível identificar dados automaticamente</span>}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
