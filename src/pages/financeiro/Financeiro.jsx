@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, subMonths, startOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBar } from '../../components/ui'
-import { Plus, Landmark, Pencil } from 'lucide-react'
+import { Plus, Landmark, Pencil, PiggyBank, TrendingUp } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
+
+const PARCEIROS = ['rayssa', 'paulo', 'rilary']
+const PARCEIRO_COR = { rayssa: '#8b5cf6', paulo: '#3b82f6', rilary: '#f59e0b' }
+const PARCEIRO_LABEL = { rayssa: 'Rayssa', paulo: 'Paulo', rilary: 'Rilary' }
 
 const tipoCores = { receber: 'green', pagar: 'red', transferencia: 'blue' }
 const statusCores = { pendente: 'yellow', pago: 'green', cancelado: 'slate', atrasado: 'red' }
@@ -22,19 +27,31 @@ export default function Financeiro() {
   const [editandoId, setEditandoId] = useState(null)
   const [contaForm, setContaForm] = useState({ name: '', bank: '', balance: '0', type: 'corrente' })
   const [clientes, setClientes] = useState([])
+  // Reserva
+  const [reservaMovements, setReservaMovements] = useState([])
+  const [showReservaModal, setShowReservaModal] = useState(false)
+  const [reservaForm, setReservaForm] = useState({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '' })
+  // Distribuição
+  const [distributions, setDistributions] = useState([])
+  const [showDistModal, setShowDistModal] = useState(false)
+  const [distForm, setDistForm] = useState({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '' })
 
   useEffect(() => { fetchTudo() }, [])
 
   async function fetchTudo() {
     setLoading(true)
-    const [tRes, cRes, clRes] = await Promise.all([
+    const [tRes, cRes, clRes, rRes, dRes] = await Promise.all([
       supabase.from('financial_transactions').select('*, clients(razao_social)').order('due_date', { ascending: false }),
       supabase.from('bank_accounts').select('*').order('name'),
       supabase.from('clients').select('id, razao_social').order('razao_social'),
+      supabase.from('reserva_movements').select('*').order('date', { ascending: false }),
+      supabase.from('profit_distributions').select('*').order('month', { ascending: false }),
     ])
     setTransacoes(tRes.data || [])
     setContas(cRes.data || [])
     setClientes(clRes.data || [])
+    setReservaMovements(rRes.data || [])
+    setDistributions(dRes.data || [])
     setLoading(false)
   }
 
@@ -150,6 +167,65 @@ export default function Financeiro() {
     }
   }
 
+  async function salvarReserva(e) {
+    e.preventDefault(); setSaving(true)
+    const { error } = await supabase.from('reserva_movements').insert({ ...reservaForm, amount: Number(reservaForm.amount) })
+    if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+    setSaving(false); setShowReservaModal(false)
+    setReservaForm({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '' })
+    fetchTudo()
+  }
+
+  async function salvarDistribuicao(e) {
+    e.preventDefault(); setSaving(true)
+    const monthDate = distForm.month + '-01'
+    const upserts = PARCEIROS.filter(p => distForm[p]).map(p => ({
+      month: monthDate, partner: p, amount: Number(distForm[p]), notes: distForm.notes || null
+    }))
+    for (const u of upserts) {
+      await supabase.from('profit_distributions').upsert(u, { onConflict: 'month,partner' })
+    }
+    setSaving(false); setShowDistModal(false)
+    setDistForm({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '' })
+    fetchTudo()
+  }
+
+  // Reserva: saldo atual e histórico mensal
+  const reservaSaldo = reservaMovements.reduce((s, m) => m.type === 'deposito' ? s + Number(m.amount) : s - Number(m.amount), 0)
+  const reservaHistorico = (() => {
+    const meses = Array.from({ length: 12 }, (_, i) => {
+      const d = subMonths(new Date(), 11 - i)
+      return format(startOfMonth(d), 'yyyy-MM')
+    })
+    let acum = 0
+    const movByMonth = {}
+    ;[...reservaMovements].reverse().forEach(m => {
+      const k = m.date.slice(0, 7)
+      if (!movByMonth[k]) movByMonth[k] = 0
+      movByMonth[k] += m.type === 'deposito' ? Number(m.amount) : -Number(m.amount)
+    })
+    return meses.map(m => {
+      acum += (movByMonth[m] || 0)
+      return { mes: m.slice(5) + '/' + m.slice(0,4), saldo: acum }
+    })
+  })()
+
+  // Distribuição: histórico por parceiro (últimos 12 meses)
+  const distHistorico = (() => {
+    const meses = Array.from({ length: 12 }, (_, i) => {
+      const d = subMonths(new Date(), 11 - i)
+      return format(startOfMonth(d), 'yyyy-MM')
+    })
+    return meses.map(m => {
+      const row = { mes: m.slice(5) + '/' + m.slice(0,4) }
+      PARCEIROS.forEach(p => {
+        const dist = distributions.find(d => d.month.slice(0,7) === m && d.partner === p)
+        row[p] = dist ? Number(dist.amount) : 0
+      })
+      return row
+    })
+  })()
+
   const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
   // Filtros
@@ -173,6 +249,8 @@ export default function Financeiro() {
     { key: 'visao_geral', label: 'Visão Geral', icon: '📊' },
     { key: 'contas', label: `Contas (${contas.length})`, icon: '🏦' },
     { key: 'transacoes', label: `Movimentações (${transacoesFiltradas.length})`, icon: '💳' },
+    { key: 'reserva', label: 'Reserva', icon: '🐷' },
+    { key: 'distribuicao', label: 'Distribuição', icon: '💰' },
   ]
 
   return (
@@ -182,15 +260,18 @@ export default function Financeiro() {
         subtitle="Controle de entradas, saídas e contas bancárias"
         actions={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn variant="secondary" onClick={() => setShowContaModal(true)}><Landmark size={14} /> Nova Conta</Btn>
-            <Btn onClick={() => setShowModal(true)}><Plus size={14} /> Nova Movimentação</Btn>
+            {tab === 'reserva' && <Btn onClick={() => setShowReservaModal(true)}><PiggyBank size={14} /> Movimentar Reserva</Btn>}
+            {tab === 'distribuicao' && <Btn onClick={() => setShowDistModal(true)}><TrendingUp size={14} /> Registrar Distribuição</Btn>}
+            {(tab === 'visao_geral' || tab === 'contas' || tab === 'transacoes') && <>
+              <Btn variant="secondary" onClick={() => setShowContaModal(true)}><Landmark size={14} /> Nova Conta</Btn>
+              <Btn onClick={() => setShowModal(true)}><Plus size={14} /> Nova Movimentação</Btn>
+            </>}
           </div>
         }
       />
 
       {/* Cards Resumo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
-        {/* Recebimentos */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12, marginBottom: 24 }}>
         <StatCard label="Recebido no Mês" value={fmt(recebidoMes)} icon="📈" color="#10b981" bg="#f0fdf4" border="#bbf7d0" />
         <StatCard label="A Receber" value={fmt(aReceber)} icon="⏳" color="#3b82f6" bg="#eff6ff" border="#bfdbfe" />
         <StatCard
@@ -201,9 +282,10 @@ export default function Financeiro() {
           bg={percInadimplencia > 20 ? '#fef2f2' : percInadimplencia > 5 ? '#fffbeb' : '#f0fdf4'}
           border={percInadimplencia > 20 ? '#fecaca' : percInadimplencia > 5 ? '#fde68a' : '#bbf7d0'}
         />
-        {/* Pagamentos */}
         <StatCard label="A Pagar" value={fmt(aPagar)} icon="📉" color="#ef4444" bg="#fef2f2" border="#fecaca" />
         <StatCard label="Pagos no Mês" value={fmt(pagosMes)} icon="✅" color="#64748b" bg="#f8fafc" border="#e2e8f0" />
+        <StatCard label="Reserva" value={fmt(reservaSaldo)} icon="🐷" color="#8b5cf6" bg="#f5f3ff" border="#ddd6fe" />
+        <StatCard label="Dist. Total Mês" value={fmt(distributions.filter(d => d.month.slice(0,7) === new Date().toISOString().slice(0,7)).reduce((s,d) => s + Number(d.amount), 0))} icon="💰" color="#f59e0b" bg="#fffbeb" border="#fde68a" />
       </div>
 
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -377,6 +459,184 @@ export default function Financeiro() {
           </table>
         </div>
       )}
+
+      {/* Aba Reserva */}
+      {tab === 'reserva' && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#4c1d95)', borderRadius: 16, padding: 20, color: 'white', gridColumn: '1/2' }}>
+              <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Saldo da Reserva</div>
+              <div style={{ fontSize: 32, fontWeight: 900 }}>{fmt(reservaSaldo)}</div>
+              <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>{reservaMovements.length} movimentações registradas</div>
+            </div>
+            <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20 }}>
+              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Total Depositado</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#7c3aed' }}>{fmt(reservaMovements.filter(m => m.type === 'deposito').reduce((s,m) => s + Number(m.amount), 0))}</div>
+            </div>
+            <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20 }}>
+              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Total Retirado</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444' }}>{fmt(reservaMovements.filter(m => m.type === 'retirada').reduce((s,m) => s + Number(m.amount), 0))}</div>
+            </div>
+          </div>
+          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20, marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 14, marginBottom: 14 }}>📈 Evolução da Reserva (12 meses)</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={reservaHistorico}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={v => 'R$' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v)} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={v => fmt(v)} />
+                <Line type="monotone" dataKey="saldo" stroke="#7c3aed" strokeWidth={2.5} dot={{ r: 4 }} name="Saldo" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, color: '#1e293b', fontSize: 14 }}>Histórico de Movimentações</div>
+            {reservaMovements.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>🐷</div>
+                <div style={{ fontWeight: 600, color: '#475569' }}>Nenhuma movimentação na reserva</div>
+                <div style={{ marginTop: 14 }}><Btn onClick={() => setShowReservaModal(true)}><PiggyBank size={14} /> Primeiro Depósito</Btn></div>
+              </div>
+            ) : reservaMovements.map(m => (
+              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid #f8fafc' }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: m.type === 'deposito' ? '#f5f3ff' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                    {m.type === 'deposito' ? '⬆️' : '⬇️'}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{m.description || (m.type === 'deposito' ? 'Depósito' : 'Retirada')}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{m.date ? format(parseISO(m.date), 'dd/MM/yyyy') : '—'}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: m.type === 'deposito' ? '#7c3aed' : '#ef4444' }}>
+                  {m.type === 'deposito' ? '+' : '-'}{fmt(m.amount)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Aba Distribuição */}
+      {tab === 'distribuicao' && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+            {PARCEIROS.map(p => {
+              const total = distributions.filter(d => d.partner === p).reduce((s,d) => s + Number(d.amount), 0)
+              const mesMes = distributions.find(d => d.partner === p && d.month.slice(0,7) === new Date().toISOString().slice(0,7))
+              return (
+                <div key={p} style={{ background: 'white', borderRadius: 16, border: `2px solid ${PARCEIRO_COR[p]}33`, padding: 20 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: PARCEIRO_COR[p] + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 900, color: PARCEIRO_COR[p] }}>
+                      {PARCEIRO_LABEL[p].charAt(0)}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#1e293b' }}>{PARCEIRO_LABEL[p]}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>Sócio</div>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Total Acumulado</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: PARCEIRO_COR[p] }}>{fmt(total)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Este Mês</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b' }}>{mesMes ? fmt(mesMes.amount) : '—'}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20, marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 14, marginBottom: 14 }}>📈 Crescimento por Sócio (12 meses)</div>
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={distHistorico}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={v => 'R$' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v)} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={v => fmt(v)} />
+                <Legend />
+                {PARCEIROS.map(p => <Line key={p} type="monotone" dataKey={p} stroke={PARCEIRO_COR[p]} strokeWidth={2.5} dot={{ r: 4 }} name={PARCEIRO_LABEL[p]} />)}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, color: '#1e293b', fontSize: 14 }}>Histórico de Distribuições</div>
+            {distributions.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>💰</div>
+                <div style={{ fontWeight: 600, color: '#475569' }}>Nenhuma distribuição registrada</div>
+                <div style={{ marginTop: 14 }}><Btn onClick={() => setShowDistModal(true)}><TrendingUp size={14} /> Registrar Primeira Distribuição</Btn></div>
+              </div>
+            ) : (() => {
+              const mesesUnicos = [...new Set(distributions.map(d => d.month.slice(0,7)))].sort().reverse()
+              return mesesUnicos.map(mes => {
+                const distMes = distributions.filter(d => d.month.slice(0,7) === mes)
+                const totalMes = distMes.reduce((s,d) => s + Number(d.amount), 0)
+                return (
+                  <div key={mes} style={{ borderBottom: '1px solid #f8fafc', padding: '12px 18px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 13 }}>
+                        {format(parseISO(mes + '-01'), "MMMM 'de' yyyy", { locale: ptBR })}
+                      </div>
+                      <div style={{ fontWeight: 800, color: '#f59e0b' }}>Total: {fmt(totalMes)}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      {PARCEIROS.map(p => {
+                        const d = distMes.find(x => x.partner === p)
+                        return d ? (
+                          <div key={p} style={{ background: PARCEIRO_COR[p] + '11', border: `1px solid ${PARCEIRO_COR[p]}33`, borderRadius: 8, padding: '6px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <span style={{ fontWeight: 700, color: PARCEIRO_COR[p], fontSize: 12 }}>{PARCEIRO_LABEL[p]}</span>
+                            <span style={{ fontWeight: 800, color: '#1e293b', fontSize: 13 }}>{fmt(Number(d.amount))}</span>
+                          </div>
+                        ) : null
+                      })}
+                    </div>
+                  </div>
+                )
+              })
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reserva */}
+      <Modal open={showReservaModal} onClose={() => setShowReservaModal(false)} title="Movimentar Reserva">
+        <form onSubmit={salvarReserva}>
+          <Select label="Tipo *" value={reservaForm.type} onChange={e => setReservaForm(f => ({ ...f, type: e.target.value }))}>
+            <option value="deposito">⬆️ Depósito (entrada na reserva)</option>
+            <option value="retirada">⬇️ Retirada (saída da reserva)</option>
+          </Select>
+          <Input label="Valor (R$) *" type="number" step="0.01" min="0" value={reservaForm.amount} onChange={e => setReservaForm(f => ({ ...f, amount: e.target.value }))} required />
+          <Input label="Data *" type="date" value={reservaForm.date} onChange={e => setReservaForm(f => ({ ...f, date: e.target.value }))} required />
+          <Input label="Descrição" value={reservaForm.description} onChange={e => setReservaForm(f => ({ ...f, description: e.target.value }))} placeholder="Ex: Reserva de março..." />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            <Btn variant="secondary" onClick={() => setShowReservaModal(false)}>Cancelar</Btn>
+            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Registrar'}</Btn>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Distribuição */}
+      <Modal open={showDistModal} onClose={() => setShowDistModal(false)} title="Registrar Distribuição de Lucros">
+        <form onSubmit={salvarDistribuicao}>
+          <div style={{ marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Mês/Ano *</label>
+            <input type="month" value={distForm.month} onChange={e => setDistForm(f => ({ ...f, month: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} required />
+          </div>
+          {PARCEIROS.map(p => (
+            <Input key={p} label={`${PARCEIRO_LABEL[p]} (R$)`} type="number" step="0.01" min="0"
+              value={distForm[p]} onChange={e => setDistForm(f => ({ ...f, [p]: e.target.value }))} placeholder="0,00" />
+          ))}
+          <Textarea label="Observações" value={distForm.notes} onChange={e => setDistForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            <Btn variant="secondary" onClick={() => setShowDistModal(false)}>Cancelar</Btn>
+            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Distribuição'}</Btn>
+          </div>
+        </form>
+      </Modal>
 
       {/* Modal Transação */}
       <Modal open={showModal} onClose={() => { setShowModal(false); setEditandoId(null) }} title={editandoId ? 'Editar Movimentação' : 'Nova Movimentação'} size="lg">

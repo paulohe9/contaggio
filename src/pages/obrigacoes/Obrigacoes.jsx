@@ -21,9 +21,13 @@ export default function Obrigacoes() {
   const [obrigacoes, setObrigacoes] = useState([])
   const [templates, setTemplates] = useState([])
   const [clientes, setClientes] = useState([])
+  const [usuarios, setUsuarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('obrigacoes')
-  const [filtroStatus, setFiltroStatus] = useState('')
+  const [filtroStatus, setFiltroStatus] = useState('ativas') // padrão: pendentes+em_andamento+atrasadas
+  const [filtroMes, setFiltroMes] = useState('')
+  const [filtroUsuario, setFiltroUsuario] = useState('')
+  const [filtroBusca, setFiltroBusca] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editandoTemplateId, setEditandoTemplateId] = useState(null)
@@ -39,31 +43,53 @@ export default function Obrigacoes() {
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
-  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
+  const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false, responsible_user_id: '' })
   const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
 
   useEffect(() => { fetchTudo() }, [])
 
   async function fetchTudo() {
     setLoading(true)
-    const [oRes, tRes, cRes] = await Promise.all([
-      supabase.from('obligations').select('*, clients(razao_social, tributacao)').order('due_date'),
+    const [oRes, tRes, cRes, uRes] = await Promise.all([
+      supabase.from('obligations').select('*, clients(razao_social, tributacao), users!obligations_responsible_user_id_fkey(name)').order('due_date'),
       supabase.from('obligation_templates').select('*').order('tributacao, name'),
       supabase.from('clients').select('id, razao_social, tributacao, setores_responsaveis').eq('status', 'ativo').order('razao_social'),
+      supabase.from('users').select('id, name').order('name'),
     ])
     setObrigacoes(oRes.data || [])
     setTemplates(tRes.data || [])
     setClientes(cRes.data || [])
+    setUsuarios(uRes.data || [])
     setLoading(false)
   }
 
-  const filtradas = filtroStatus ? obrigacoes.filter(o => o.status === filtroStatus) : obrigacoes
+  const filtradas = obrigacoes.filter(o => {
+    // Filtro de status
+    if (filtroStatus === 'ativas') {
+      if (['concluida', 'cancelada'].includes(o.status)) return false
+    } else if (filtroStatus) {
+      if (o.status !== filtroStatus) return false
+    }
+    // Filtro de mês (pelo due_date)
+    if (filtroMes && o.due_date && o.due_date.slice(0,7) !== filtroMes) return false
+    // Filtro de usuário responsável
+    if (filtroUsuario && o.responsible_user_id !== filtroUsuario) return false
+    // Busca texto
+    if (filtroBusca) {
+      const q = filtroBusca.toLowerCase()
+      const matchTitle = o.title?.toLowerCase().includes(q)
+      const matchCliente = o.clients?.razao_social?.toLowerCase().includes(q)
+      if (!matchTitle && !matchCliente) return false
+    }
+    return true
+  })
 
   async function salvarObrigacao(e) {
     e.preventDefault(); setSaving(true)
-    await supabase.from('obligations').insert(form)
+    const payload = { ...form, responsible_user_id: form.responsible_user_id || null }
+    await supabase.from('obligations').insert(payload)
     setSaving(false); setShowModal(false)
-    setForm({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false })
+    setForm({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false, responsible_user_id: '' })
     fetchTudo()
   }
 
@@ -305,8 +331,9 @@ export default function Obrigacoes() {
 
       {tab === 'obrigacoes' && (
         <div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-            {[['', 'Todas'], ['pendente', 'Pendentes'], ['em_andamento', 'Em andamento'], ['concluida', 'Concluídas'], ['atrasada', 'Atrasadas']].map(([v, l]) => (
+          {/* Filtros de status */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            {[['ativas', 'A Vencer'], ['', 'Todas'], ['pendente', 'Pendentes'], ['em_andamento', 'Em andamento'], ['atrasada', 'Atrasadas'], ['concluida', 'Concluídas']].map(([v, l]) => (
               <button key={v} onClick={() => setFiltroStatus(v)}
                 style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, border: '1.5px solid', borderRadius: 10, cursor: 'pointer', transition: 'all 0.15s',
                   borderColor: filtroStatus === v ? '#2563eb' : '#e2e8f0',
@@ -316,6 +343,31 @@ export default function Obrigacoes() {
                 {l}
               </button>
             ))}
+          </div>
+          {/* Filtros avançados */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 13 }}>🔍</span>
+              <input value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="Buscar por nome ou cliente..."
+                style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Mês:</label>
+              <input type="month" value={filtroMes} onChange={e => setFiltroMes(e.target.value)}
+                style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
+            </div>
+            <select value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)}
+              style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
+              <option value="">Todos os responsáveis</option>
+              {usuarios.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+            {(filtroBusca || filtroMes || filtroUsuario) && (
+              <button onClick={() => { setFiltroBusca(''); setFiltroMes(''); setFiltroUsuario('') }}
+                style={{ padding: '8px 12px', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 12, background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                Limpar
+              </button>
+            )}
+            <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>{filtradas.length} resultado(s)</span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -336,6 +388,7 @@ export default function Obrigacoes() {
                     {o.periodicity && <Badge color="purple">{o.periodicity}</Badge>}
                   </div>
                   {o.clients && <div style={{ fontSize: 12, color: '#64748b' }}>👤 {o.clients.razao_social}</div>}
+                  {o.users && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 1 }}>🙋 {o.users.name}</div>}
                   {o.description && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{o.description}</div>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
@@ -452,6 +505,10 @@ export default function Obrigacoes() {
               <option value="em_andamento">Em andamento</option>
             </Select>
           </div>
+          <Select label="Responsável" value={form.responsible_user_id} onChange={e => setForm(f => ({ ...f, responsible_user_id: e.target.value }))}>
+            <option value="">Sem responsável atribuído</option>
+            {usuarios.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </Select>
           <Textarea label="Descrição" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
           <ToggleEnviarCliente value={form.enviar_cliente} onChange={v => setForm(f => ({ ...f, enviar_cliente: v }))} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
