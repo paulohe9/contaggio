@@ -59,19 +59,29 @@ export default function Financeiro() {
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
   const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
 
-  // Receber (entrada)
-  const recebidoMes = transacoes.filter(t =>
-    t.type === 'receber' && t.status === 'pago' &&
-    t.data_pagamento && new Date(t.data_pagamento) >= inicioMes && new Date(t.data_pagamento) <= fimMes
-  ).reduce((s, t) => s + Number(t.amount), 0)
+  // Converte string de data ISO sem deslocar fuso
+  function parseDateLocal(str) {
+    if (!str) return null
+    const [y, m, d] = str.slice(0, 10).split('-').map(Number)
+    return new Date(y, m - 1, d)
+  }
+
+  // Receber (entrada) — usa data_pagamento; se ausente, usa due_date como fallback
+  const recebidoMes = transacoes.filter(t => {
+    if (t.type !== 'receber' || t.status !== 'pago') return false
+    const dt = parseDateLocal(t.data_pagamento || t.due_date)
+    return dt && dt >= inicioMes && dt <= fimMes
+  }).reduce((s, t) => s + Number(t.amount), 0)
 
   const aReceber = transacoes.filter(t =>
     t.type === 'receber' && t.status === 'pendente'
   ).reduce((s, t) => s + Number(t.amount), 0)
 
-  const vencidosNaoPagos = transacoes.filter(t =>
-    t.type === 'receber' && t.status === 'pendente' && t.due_date && new Date(t.due_date) < hoje
-  ).reduce((s, t) => s + Number(t.amount), 0)
+  const vencidosNaoPagos = transacoes.filter(t => {
+    if (t.type !== 'receber' || t.status !== 'pendente') return false
+    const dt = parseDateLocal(t.due_date)
+    return dt && dt < hoje
+  }).reduce((s, t) => s + Number(t.amount), 0)
 
   const totalAReceber = aReceber || 1
   const percInadimplencia = Math.round((vencidosNaoPagos / totalAReceber) * 100)
@@ -81,10 +91,11 @@ export default function Financeiro() {
     t.type === 'pagar' && t.status === 'pendente'
   ).reduce((s, t) => s + Number(t.amount), 0)
 
-  const pagosMes = transacoes.filter(t =>
-    t.type === 'pagar' && t.status === 'pago' &&
-    t.data_pagamento && new Date(t.data_pagamento) >= inicioMes && new Date(t.data_pagamento) <= fimMes
-  ).reduce((s, t) => s + Number(t.amount), 0)
+  const pagosMes = transacoes.filter(t => {
+    if (t.type !== 'pagar' || t.status !== 'pago') return false
+    const dt = parseDateLocal(t.data_pagamento || t.due_date)
+    return dt && dt >= inicioMes && dt <= fimMes
+  }).reduce((s, t) => s + Number(t.amount), 0)
 
   const saldoTotal = contas.reduce((s, c) => s + Number(c.balance), 0)
 
