@@ -174,7 +174,8 @@ export default function ClienteForm() {
             <Input label="Inscrição Estadual" value={form.inscricao_estadual} onChange={e => set('inscricao_estadual', e.target.value)} />
             <Select label="Regime Tributário" value={form.tributacao} onChange={e => set('tributacao', e.target.value)}>
               <option value="">Selecione...</option>
-              <option value="simples_nacional">Simples Nacional</option>
+              <option value="simples_nacional_comercio">Simples Nacional Comércio</option>
+              <option value="simples_nacional_servico">Simples Nacional Serviço</option>
               <option value="lucro_presumido">Lucro Presumido</option>
               <option value="lucro_real">Lucro Real</option>
               <option value="mei">MEI</option>

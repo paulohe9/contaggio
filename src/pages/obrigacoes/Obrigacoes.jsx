@@ -6,7 +6,7 @@ import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBa
 import { Plus, Settings, Zap, Mail, History, Paperclip, X, FileText, Upload } from 'lucide-react'
 
 const statusCor = { pendente: 'yellow', em_andamento: 'blue', concluida: 'green', atrasada: 'red', cancelada: 'slate' }
-const tribLabel = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI', todos: 'Todos os regimes' }
+const tribLabel = { simples_nacional_comercio: 'SN Comércio', simples_nacional_servico: 'SN Serviço', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI', todos: 'Todos os regimes' }
 
 const PERIODICIDADES = [
   { value: 'mensal', label: 'Mensal' },
@@ -41,11 +41,11 @@ export default function Obrigacoes() {
   const [anexos, setAnexos] = useState([]) // { file, name, size, uploading, url, error }
   const anexosRef = useRef(null)
   const [saving, setSaving] = useState(false)
-  const [gerarTrib, setGerarTrib] = useState('simples_nacional')
+  const [gerarTrib, setGerarTrib] = useState('simples_nacional_comercio')
   const [gerarCliente, setGerarCliente] = useState('')
   const [gerarCompetencia, setGerarCompetencia] = useState(new Date().toISOString().slice(0, 7))
   const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false, responsible_user_id: '' })
-  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
+  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional_comercio', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -103,7 +103,7 @@ export default function Obrigacoes() {
       await supabase.from('obligation_templates').insert(payload)
     }
     setSaving(false); setShowTemplateModal(false); setEditandoTemplateId(null)
-    setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
+    setTplForm({ name: '', description: '', tributacao: 'simples_nacional_comercio', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
     fetchTudo()
   }
 
@@ -562,12 +562,13 @@ export default function Obrigacoes() {
       </Modal>
 
       {/* Modal Novo/Editar Template */}
-      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
+      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: 'simples_nacional_comercio', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
         <form onSubmit={salvarTemplate}>
           <Input label="Nome da obrigação *" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: DAS Simples Nacional, DCTF, eSocial..." required />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select label="Regime tributário *" value={tplForm.tributacao} onChange={e => setTplForm(f => ({ ...f, tributacao: e.target.value }))}>
-              <option value="simples_nacional">Simples Nacional</option>
+              <option value="simples_nacional_comercio">Simples Nacional Comércio</option>
+              <option value="simples_nacional_servico">Simples Nacional Serviço</option>
               <option value="lucro_presumido">Lucro Presumido</option>
               <option value="lucro_real">Lucro Real</option>
               <option value="mei">MEI</option>
@@ -772,7 +773,8 @@ export default function Obrigacoes() {
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>Os vencimentos serão gerados com base neste mês/ano.</div>
           </div>
           <Select label="Regime Tributário *" value={gerarTrib} onChange={e => setGerarTrib(e.target.value)}>
-            <option value="simples_nacional">Simples Nacional</option>
+            <option value="simples_nacional_comercio">Simples Nacional Comércio</option>
+            <option value="simples_nacional_servico">Simples Nacional Serviço</option>
             <option value="lucro_presumido">Lucro Presumido</option>
             <option value="lucro_real">Lucro Real</option>
             <option value="mei">MEI</option>

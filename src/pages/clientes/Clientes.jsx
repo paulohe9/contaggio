@@ -4,8 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { PageHeader, Btn, Badge, Table, EmptyState, StatCard } from '../../components/ui'
 import { UserPlus, Search } from 'lucide-react'
 
-const tributacaoLabel = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI' }
-const tributacaoCor = { simples_nacional: 'blue', lucro_presumido: 'purple', lucro_real: 'orange', mei: 'green' }
+const tributacaoLabel = { simples_nacional_comercio: 'SN Comércio', simples_nacional_servico: 'SN Serviço', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI' }
+const tributacaoCor = { simples_nacional_comercio: 'blue', simples_nacional_servico: 'cyan', lucro_presumido: 'purple', lucro_real: 'orange', mei: 'green' }
 const statusCor = { ativo: 'green', inativo: 'slate', suspenso: 'red' }
 
 export default function Clientes() {
@@ -63,7 +63,8 @@ export default function Clientes() {
         <select value={filtroTrib} onChange={e => setFiltroTrib(e.target.value)}
           style={{ padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', cursor: 'pointer', outline: 'none' }}>
           <option value="">Todos os regimes</option>
-          <option value="simples_nacional">Simples Nacional</option>
+          <option value="simples_nacional_comercio">SN Comércio</option>
+          <option value="simples_nacional_servico">SN Serviço</option>
           <option value="lucro_presumido">Lucro Presumido</option>
           <option value="lucro_real">Lucro Real</option>
           <option value="mei">MEI</option>

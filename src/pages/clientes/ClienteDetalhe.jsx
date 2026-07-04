@@ -7,7 +7,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Btn, Badge, Modal, Input, Select, Textarea, TabBar } from '../../components/ui'
 import { ArrowLeft, Edit2, UserMinus, Plus, Eye, EyeOff, Phone, Mail, User } from 'lucide-react'
 
-const tribLabel = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI' }
+const tribLabel = { simples_nacional_comercio: 'SN Comércio', simples_nacional_servico: 'SN Serviço', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real', mei: 'MEI' }
 const statusCor = { ativo: 'green', inativo: 'slate', suspenso: 'red' }
 const reqStatusCor = { aberta: 'yellow', em_andamento: 'blue', concluida: 'green', cancelada: 'slate' }
 const obStatusCor = { pendente: 'yellow', em_andamento: 'blue', concluida: 'green', atrasada: 'red' }
