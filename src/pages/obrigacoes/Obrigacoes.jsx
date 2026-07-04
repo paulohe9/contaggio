@@ -43,6 +43,7 @@ export default function Obrigacoes() {
   const [saving, setSaving] = useState(false)
   const [gerarTrib, setGerarTrib] = useState('simples_nacional')
   const [gerarCliente, setGerarCliente] = useState('')
+  const [gerarCompetencia, setGerarCompetencia] = useState(new Date().toISOString().slice(0, 7))
   const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false, responsible_user_id: '' })
   const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
 
@@ -136,7 +137,8 @@ export default function Obrigacoes() {
     const clientesFiltrados = gerarCliente
       ? clientes.filter(c => c.id === gerarCliente)
       : clientes.filter(c => c.tributacao === gerarTrib)
-    const hoje = new Date()
+    const [compAno, compMes] = gerarCompetencia.split('-').map(Number)
+    const baseDate = new Date(compAno, compMes - 1, 1) // primeiro dia da competência escolhida
     const registros = []
 
     const sectorMap = { 'Fiscal': 'fiscal', 'Pessoal': 'pessoal', 'Contábil': 'contabil', 'Societário': 'societario', 'DP': 'pessoal' }
@@ -147,15 +149,14 @@ export default function Obrigacoes() {
         const sectorKey = sectorMap[tpl.category] || null
         const responsibleId = sectorKey && cli.setores_responsaveis ? cli.setores_responsaveis[sectorKey] || null : null
 
-        // Determina em quais meses gerar. Para periocidades não-mensais, usa meses_competencia se definido.
+        // Determina em quais meses gerar. Mensais: usa o mês da competência escolhida.
+        // Não-mensais com meses_competencia: gera só se o mês base estiver na lista.
         const meses = (tpl.periodicity !== 'mensal' && tpl.meses_competencia?.length)
-          ? tpl.meses_competencia // array de números de mês (0-11)
-          : [hoje.getMonth()]
+          ? tpl.meses_competencia
+          : [baseDate.getMonth()]
 
         for (const mes of meses) {
-          const anoBase = hoje.getFullYear()
-          let dataVenc = new Date(anoBase, mes, dia)
-          if (dataVenc < hoje) dataVenc = new Date(anoBase + 1, mes, dia)
+          const dataVenc = new Date(compAno, mes, dia)
 
           const offset = Number(tpl.competencia_offset || 0)
           const dataCompetencia = offset !== 0 ? addMonths(dataVenc, offset) : null
@@ -763,6 +764,12 @@ export default function Obrigacoes() {
         <form onSubmit={gerarObrigacoes}>
           <div style={{ background: '#eff6ff', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#1e40af', border: '1px solid #bfdbfe' }}>
             Serão geradas obrigações para os clientes do regime selecionado, com base nos modelos cadastrados. O vencimento é calculado a partir do dia definido em cada modelo.
+          </div>
+          <div style={{ marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Gerar a partir de (Mês/Ano) *</label>
+            <input type="month" value={gerarCompetencia} onChange={e => setGerarCompetencia(e.target.value)}
+              style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} required />
+            <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>Os vencimentos serão gerados com base neste mês/ano.</div>
           </div>
           <Select label="Regime Tributário *" value={gerarTrib} onChange={e => setGerarTrib(e.target.value)}>
             <option value="simples_nacional">Simples Nacional</option>
