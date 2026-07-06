@@ -45,7 +45,7 @@ export default function Obrigacoes() {
   const [gerarCliente, setGerarCliente] = useState('')
   const [gerarCompetencia, setGerarCompetencia] = useState(new Date().toISOString().slice(0, 7))
   const [form, setForm] = useState({ client_id: '', title: '', description: '', due_date: '', status: 'pendente', periodicity: 'mensal', category: '', enviar_cliente: false, responsible_user_id: '' })
-  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: 'simples_nacional_comercio', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
+  const [tplForm, setTplForm] = useState({ name: '', description: '', tributacao: ['simples_nacional_comercio'], periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -103,7 +103,7 @@ export default function Obrigacoes() {
       await supabase.from('obligation_templates').insert(payload)
     }
     setSaving(false); setShowTemplateModal(false); setEditandoTemplateId(null)
-    setTplForm({ name: '', description: '', tributacao: 'simples_nacional_comercio', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
+    setTplForm({ name: '', description: '', tributacao: ['simples_nacional_comercio'], periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] })
     fetchTudo()
   }
 
@@ -111,7 +111,7 @@ export default function Obrigacoes() {
     setTplForm({
       name: t.name || '',
       description: t.description || '',
-      tributacao: t.tributacao || 'simples_nacional',
+      tributacao: Array.isArray(t.tributacao) ? t.tributacao : (t.tributacao ? [t.tributacao] : ['simples_nacional_comercio']),
       periodicity: t.periodicity || 'mensal',
       due_day: String(t.due_day || '15'),
       category: t.category || '',
@@ -133,7 +133,10 @@ export default function Obrigacoes() {
 
   async function gerarObrigacoes(e) {
     e.preventDefault(); setSaving(true)
-    const tplsFiltrados = templates.filter(t => t.tributacao === gerarTrib || t.tributacao === 'todos')
+    const tplsFiltrados = templates.filter(t => {
+      const tribs = Array.isArray(t.tributacao) ? t.tributacao : [t.tributacao]
+      return tribs.includes(gerarTrib) || tribs.includes('todos')
+    })
     const clientesFiltrados = gerarCliente
       ? clientes.filter(c => c.id === gerarCliente)
       : clientes.filter(c => c.tributacao === gerarTrib)
@@ -338,8 +341,9 @@ export default function Obrigacoes() {
   ]
 
   const tribGrouped = templates.reduce((acc, t) => {
-    if (!acc[t.tributacao]) acc[t.tributacao] = []
-    acc[t.tributacao].push(t)
+    const key = Array.isArray(t.tributacao) ? t.tributacao.join(',') : (t.tributacao || 'todos')
+    if (!acc[key]) acc[key] = []
+    acc[key].push(t)
     return acc
   }, {})
 
@@ -562,18 +566,36 @@ export default function Obrigacoes() {
       </Modal>
 
       {/* Modal Novo/Editar Template */}
-      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: 'simples_nacional_comercio', periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
+      <Modal open={showTemplateModal} onClose={() => { setShowTemplateModal(false); setEditandoTemplateId(null); setTplForm({ name: '', description: '', tributacao: ['simples_nacional_comercio'], periodicity: 'mensal', due_day: '15', category: '', enviar_cliente: false, email_subject: '', email_template: '', competencia_offset: 0, meses_competencia: [] }) }} title={editandoTemplateId ? 'Editar Modelo de Obrigação' : 'Novo Modelo de Obrigação'} size="lg">
         <form onSubmit={salvarTemplate}>
           <Input label="Nome da obrigação *" value={tplForm.name} onChange={e => setTplForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: DAS Simples Nacional, DCTF, eSocial..." required />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select label="Regime tributário *" value={tplForm.tributacao} onChange={e => setTplForm(f => ({ ...f, tributacao: e.target.value }))}>
-              <option value="simples_nacional_comercio">Simples Nacional Comércio</option>
-              <option value="simples_nacional_servico">Simples Nacional Serviço</option>
-              <option value="lucro_presumido">Lucro Presumido</option>
-              <option value="lucro_real">Lucro Real</option>
-              <option value="mei">MEI</option>
-              <option value="todos">Todos os regimes</option>
-            </Select>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Regime tributário *</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
+                {[
+                  { value: 'simples_nacional_comercio', label: 'SN Comércio' },
+                  { value: 'simples_nacional_servico', label: 'SN Serviço' },
+                  { value: 'lucro_presumido', label: 'Lucro Presumido' },
+                  { value: 'lucro_real', label: 'Lucro Real' },
+                  { value: 'mei', label: 'MEI' },
+                  { value: 'todos', label: 'Todos os regimes' },
+                ].map(opt => (
+                  <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', color: '#374151' }}>
+                    <input type="checkbox"
+                      checked={Array.isArray(tplForm.tributacao) ? tplForm.tributacao.includes(opt.value) : tplForm.tributacao === opt.value}
+                      onChange={e => {
+                        const cur = Array.isArray(tplForm.tributacao) ? tplForm.tributacao : [tplForm.tributacao]
+                        const next = e.target.checked ? [...cur, opt.value] : cur.filter(v => v !== opt.value)
+                        setTplForm(f => ({ ...f, tributacao: next.length ? next : [opt.value] }))
+                      }}
+                      style={{ width: 15, height: 15, accentColor: '#3b82f6', cursor: 'pointer' }}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
             <Select label="Periodicidade" value={tplForm.periodicity} onChange={e => setTplForm(f => ({ ...f, periodicity: e.target.value }))}>
               {PERIODICIDADES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </Select>
@@ -784,7 +806,7 @@ export default function Obrigacoes() {
             {clientes.filter(c => c.tributacao === gerarTrib).map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
           </Select>
           <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-            {templates.filter(t => t.tributacao === gerarTrib || t.tributacao === 'todos').length} modelo(s) · {gerarCliente ? 1 : clientes.filter(c => c.tributacao === gerarTrib).length} cliente(s)
+            {templates.filter(t => { const tr = Array.isArray(t.tributacao) ? t.tributacao : [t.tributacao]; return tr.includes(gerarTrib) || tr.includes('todos') }).length} modelo(s) · {gerarCliente ? 1 : clientes.filter(c => c.tributacao === gerarTrib).length} cliente(s)
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <Btn variant="secondary" onClick={() => setShowGerarModal(false)}>Cancelar</Btn>
