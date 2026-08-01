@@ -14,6 +14,14 @@ const tipoCores = { receber: 'green', pagar: 'red', transferencia: 'blue' }
 const statusCores = { pendente: 'yellow', pago: 'green', cancelado: 'slate', atrasado: 'red' }
 const tipoLabel = { receber: 'Receber', pagar: 'Pagar', transferencia: 'Transferência' }
 
+const CATEGORIAS = [
+  'Honorários', 'Imposto Federal', 'Imposto Estadual', 'Imposto Municipal',
+  'Simples Nacional', 'FGTS', 'INSS', 'Folha de Pagamento',
+  'Distribuição de Lucros', 'Reserva Financeira', 'Aluguel', 'Energia / Água / Internet',
+  'Fornecedor', 'Despesa Administrativa', 'Investimento',
+  'Receita Extraordinária', 'Multa / Juros', 'Outros',
+]
+
 export default function Financeiro() {
   const [transacoes, setTransacoes] = useState([])
   const [contas, setContas] = useState([])
@@ -261,10 +269,18 @@ export default function Financeiro() {
 
   const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
+  // Import Asaas
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importLinhas, setImportLinhas] = useState([])
+  const [importSelecionadas, setImportSelecionadas] = useState([])
+  const [importando, setImportando] = useState(false)
+  const [importContaId, setImportContaId] = useState('')
+
   // Filtros
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroStatus2, setFiltroStatus2] = useState('')
+  const [filtroCategoria, setFiltroCategoria] = useState('')
   const [filtroDataIni, setFiltroDataIni] = useState('')
   const [filtroDataFim, setFiltroDataFim] = useState('')
 
@@ -273,10 +289,116 @@ export default function Financeiro() {
     const matchBusca = !busca || t.description?.toLowerCase().includes(q) || t.clients?.razao_social?.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q)
     const matchTipo = !filtroTipo || t.type === filtroTipo
     const matchStatus = !filtroStatus2 || t.status === filtroStatus2
+    const matchCat = !filtroCategoria || t.category === filtroCategoria
     const matchIni = !filtroDataIni || (t.due_date && t.due_date >= filtroDataIni)
     const matchFim = !filtroDataFim || (t.due_date && t.due_date <= filtroDataFim)
-    return matchBusca && matchTipo && matchStatus && matchIni && matchFim
+    return matchBusca && matchTipo && matchStatus && matchCat && matchIni && matchFim
   })
+
+  function exportarCSV() {
+    const cabecalho = ['Descrição', 'Tipo', 'Valor', 'Vencimento', 'Pagamento', 'Status', 'Categoria', 'Cliente', 'Recorrente']
+    const linhas = transacoesFiltradas.map(t => [
+      `"${(t.description || '').replace(/"/g, '""')}"`,
+      tipoLabel[t.type] || t.type,
+      Number(t.amount).toFixed(2).replace('.', ','),
+      t.due_date || '',
+      t.data_pagamento || '',
+      t.status,
+      t.category || '',
+      `"${(t.clients?.razao_social || '').replace(/"/g, '""')}"`,
+      t.is_recurring ? 'Sim' : 'Não',
+    ])
+    const csv = [cabecalho, ...linhas].map(r => r.join(';')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `financeiro_${new Date().toISOString().slice(0,10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function lerArquivoAsaas(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target.result
+      const linhas = text.split(/\r?\n/).filter(l => l.trim())
+      if (linhas.length < 2) { alert('Arquivo vazio ou sem dados.'); return }
+      const sep = linhas[0].includes(';') ? ';' : ','
+      const headers = linhas[0].split(sep).map(h => h.replace(/"/g, '').trim().toLowerCase())
+
+      const col = (row, names) => {
+        for (const n of names) {
+          const idx = headers.findIndex(h => h.includes(n))
+          if (idx >= 0) return row[idx]?.replace(/"/g, '').trim() || ''
+        }
+        return ''
+      }
+
+      const rows = linhas.slice(1).map(linha => {
+        const row = linha.split(sep)
+        const valorRaw = col(row, ['valor', 'value', 'amount']).replace(/[^\d,.-]/g, '').replace(',', '.')
+        const valor = parseFloat(valorRaw) || 0
+        const statusRaw = col(row, ['status', 'situacao', 'situação']).toLowerCase()
+        const tipoRaw = col(row, ['tipo', 'type', 'natureza']).toLowerCase()
+
+        const status = statusRaw.includes('recebi') || statusRaw.includes('paid') || statusRaw.includes('pago') ? 'pago'
+          : statusRaw.includes('cancel') ? 'cancelado' : 'pendente'
+
+        const type = tipoRaw.includes('receiv') || tipoRaw.includes('entrada') || tipoRaw.includes('crédito') || tipoRaw.includes('credit') ? 'receber'
+          : tipoRaw.includes('pay') || tipoRaw.includes('saída') || tipoRaw.includes('débito') || tipoRaw.includes('debit') ? 'pagar'
+          : valor >= 0 ? 'receber' : 'pagar'
+
+        const dueDateRaw = col(row, ['vencimento', 'due', 'duedate', 'data venc'])
+        const payDateRaw = col(row, ['pagamento', 'payment', 'paydate', 'data pag'])
+
+        const parseData = (raw) => {
+          if (!raw) return ''
+          const parts = raw.split(/[\/\-]/)
+          if (parts.length === 3) {
+            if (parts[0].length === 4) return raw.slice(0, 10)
+            return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+          }
+          return ''
+        }
+
+        return {
+          description: col(row, ['descrição', 'descricao', 'description', 'historico', 'histórico']) || 'Importado Asaas',
+          type,
+          amount: Math.abs(valor),
+          due_date: parseData(dueDateRaw),
+          data_pagamento: parseData(payDateRaw),
+          status,
+          category: col(row, ['categoria', 'category']) || '',
+          _raw: linha,
+        }
+      }).filter(r => r.amount > 0)
+      setImportLinhas(rows)
+      setImportSelecionadas(rows.map((_, i) => i))
+    }
+    reader.readAsText(file, 'UTF-8')
+  }
+
+  async function confirmarImport() {
+    if (!importSelecionadas.length) return
+    setImportando(true)
+    const registros = importSelecionadas.map(i => ({
+      ...importLinhas[i],
+      bank_account_id: importContaId || null,
+      is_recurring: false,
+      _raw: undefined,
+    }))
+    const { error } = await supabase.from('financial_transactions').insert(registros)
+    if (error) { alert('Erro ao importar: ' + error.message); setImportando(false); return }
+    setImportando(false)
+    setShowImportModal(false)
+    setImportLinhas([])
+    setImportSelecionadas([])
+    fetchTudo()
+    alert(`${registros.length} transação(ões) importada(s) com sucesso!`)
+  }
 
   const tabs = [
     { key: 'visao_geral', label: 'Visão Geral', icon: '📊' },
@@ -297,6 +419,8 @@ export default function Financeiro() {
             {tab === 'distribuicao' && <Btn onClick={() => setShowDistModal(true)}><TrendingUp size={14} /> Registrar Distribuição</Btn>}
             {(tab === 'visao_geral' || tab === 'contas' || tab === 'transacoes') && <>
               <Btn variant="secondary" onClick={() => setShowContaModal(true)}><Landmark size={14} /> Nova Conta</Btn>
+              <Btn variant="secondary" onClick={exportarCSV} title="Exportar transações filtradas como CSV">⬇ Exportar CSV</Btn>
+              <Btn variant="secondary" onClick={() => setShowImportModal(true)} title="Importar extrato do Asaas">⬆ Importar Asaas</Btn>
               <Btn onClick={() => setShowModal(true)}><Plus size={14} /> Nova Movimentação</Btn>
             </>}
           </div>
@@ -342,12 +466,16 @@ export default function Financeiro() {
           <option value="pago">Pago</option>
           <option value="cancelado">Cancelado</option>
         </select>
+        <select value={filtroCategoria} onChange={e => setFiltroCategoria(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
+          <option value="">Todas as categorias</option>
+          {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
         <input type="date" value={filtroDataIni} onChange={e => setFiltroDataIni(e.target.value)} title="Vencimento de"
           style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
         <input type="date" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)} title="Vencimento até"
           style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
-        {(busca || filtroTipo || filtroStatus2 || filtroDataIni || filtroDataFim) && (
-          <button onClick={() => { setBusca(''); setFiltroTipo(''); setFiltroStatus2(''); setFiltroDataIni(''); setFiltroDataFim('') }}
+        {(busca || filtroTipo || filtroStatus2 || filtroCategoria || filtroDataIni || filtroDataFim) && (
+          <button onClick={() => { setBusca(''); setFiltroTipo(''); setFiltroStatus2(''); setFiltroCategoria(''); setFiltroDataIni(''); setFiltroDataFim('') }}
             style={{ padding: '8px 14px', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 12, background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}>
             Limpar filtros
           </button>
@@ -716,7 +844,10 @@ export default function Financeiro() {
             {clientes.map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
           </Select>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input label="Categoria" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Ex: Honorários, Aluguel..." />
+            <Select label="Categoria (Tag)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              <option value="">Sem categoria</option>
+              {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
             <Select label="Conta bancária" value={form.bank_account_id || ''} onChange={e => setForm(f => ({ ...f, bank_account_id: e.target.value }))}>
               <option value="">Sem conta vinculada</option>
               {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
@@ -771,6 +902,91 @@ export default function Financeiro() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Modal Importar Asaas */}
+      <Modal open={showImportModal} onClose={() => { setShowImportModal(false); setImportLinhas([]); setImportSelecionadas([]) }} title="Importar Extrato Asaas" size="lg">
+        <div>
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#1d4ed8', marginBottom: 14 }}>
+            <strong>Como exportar do Asaas:</strong> Acesse Financeiro → Cobranças ou Lançamentos → Exportar → CSV. O sistema detecta automaticamente os campos.
+          </div>
+          {importLinhas.length === 0 ? (
+            <div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Arquivo CSV do Asaas *</label>
+                <input type="file" accept=".csv,.txt" onChange={lerArquivoAsaas}
+                  style={{ width: '100%', padding: '9px 12px', border: '1.5px dashed #93c5fd', borderRadius: 10, fontSize: 13, background: '#f0f9ff', cursor: 'pointer', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Btn variant="secondary" onClick={() => setShowImportModal(false)}>Cancelar</Btn>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Vincular à conta bancária</label>
+                  <select value={importContaId} onChange={e => setImportContaId(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white' }}>
+                    <option value="">Sem conta vinculada</option>
+                    {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                  <button onClick={() => setImportSelecionadas(importLinhas.map((_, i) => i))}
+                    style={{ padding: '8px 12px', border: '1.5px solid #bbf7d0', borderRadius: 8, background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    ✓ Selecionar tudo ({importLinhas.length})
+                  </button>
+                  <button onClick={() => setImportSelecionadas([])}
+                    style={{ padding: '8px 12px', border: '1.5px solid #fecaca', borderRadius: 8, background: '#fef2f2', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    ✕ Desmarcar tudo
+                  </button>
+                </div>
+              </div>
+              <div style={{ maxHeight: 340, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, marginBottom: 14 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                    <tr>
+                      {['', 'Descrição', 'Tipo', 'Valor', 'Vencimento', 'Pgto', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importLinhas.map((linha, i) => {
+                      const sel = importSelecionadas.includes(i)
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #f8fafc', background: sel ? '#f0fdf4' : 'white', cursor: 'pointer' }}
+                          onClick={() => setImportSelecionadas(s => sel ? s.filter(x => x !== i) : [...s, i])}>
+                          <td style={{ padding: '8px 10px' }}>
+                            <input type="checkbox" checked={sel} readOnly style={{ cursor: 'pointer' }} />
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#1e293b', fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.description}</td>
+                          <td style={{ padding: '8px 10px' }}><Badge color={tipoCores[linha.type]}>{tipoLabel[linha.type]}</Badge></td>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: linha.type === 'receber' ? '#10b981' : '#ef4444' }}>{fmt(linha.amount)}</td>
+                          <td style={{ padding: '8px 10px', color: '#64748b' }}>{linha.due_date || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#64748b' }}>{linha.data_pagamento || '—'}</td>
+                          <td style={{ padding: '8px 10px' }}><Badge color={statusCores[linha.status]}>{linha.status}</Badge></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 13, color: '#64748b' }}>
+                  <strong>{importSelecionadas.length}</strong> de {importLinhas.length} selecionadas
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Btn variant="secondary" onClick={() => { setImportLinhas([]); setImportSelecionadas([]) }}>← Voltar</Btn>
+                  <Btn onClick={confirmarImport} disabled={importando || !importSelecionadas.length}>
+                    {importando ? 'Importando...' : `Importar ${importSelecionadas.length} lançamento(s)`}
+                  </Btn>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* Modal Conta */}
