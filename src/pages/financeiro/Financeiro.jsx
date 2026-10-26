@@ -24,7 +24,7 @@ const CAT_PAGAR = [
   'Imposto Federal', 'Imposto Estadual', 'Imposto Municipal', 'Simples Nacional', 'FGTS', 'INSS',
   'Folha de Pagamento', 'Pró-labore', 'Distribuição de Lucros', 'Reserva Financeira', 'Aluguel',
   'Energia / Água / Internet', 'Sistemas / Softwares', 'Fornecedor', 'Despesa Administrativa',
-  'Marketing', 'Investimento', 'Tarifas Bancárias', 'Multa / Juros', 'Outros',
+  'Marketing', 'Investimento', 'Comissão', 'Tarifas Bancárias', 'Multa / Juros', 'Outros',
 ]
 const CATS = { receber: CAT_RECEBER, pagar: CAT_PAGAR }
 
@@ -217,6 +217,7 @@ export default function Financeiro() {
     await ajustarSaldo(bank_account_id, t.type === 'receber' ? Number(t.amount) : -Number(t.amount))
     setTransacoes(ts => ts.map(x => x.id === t.id ? { ...x, status: 'pago', data_pagamento, bank_account_id } : x))
     setSaving(false); setBaixa(null)
+    if (t.type === 'receber') fetchTudo() // traz a comissão gerada automaticamente, se houver
   }
   async function estornar(t) {
     if (!confirm(`Estornar a baixa de "${t.description}"?\nO título volta para "em aberto"${t.bank_account_id ? ' e o saldo da conta é corrigido' : ''}.`)) return
@@ -225,6 +226,7 @@ export default function Financeiro() {
     if (error) { alert('Erro: ' + error.message); return }
     await ajustarSaldo(t.bank_account_id, t.type === 'receber' ? -Number(t.amount) : Number(t.amount))
     setTransacoes(ts => ts.map(x => x.id === t.id ? { ...x, status: 'pendente', data_pagamento: null, bank_account_id: null } : x))
+    if (t.type === 'receber') fetchTudo() // a comissão pendente é cancelada junto
   }
   async function mudarStatus(t, status) {
     await supabase.from('financial_transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', t.id)
