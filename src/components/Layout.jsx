@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, Users, Wallet, ClipboardList, Scale, UserCog,
   ChevronLeft, ChevronRight, ChevronDown, LogOut, Inbox, BarChart2,
-  Target, Briefcase, HardHat, FolderOpen
+  Target, Briefcase, HardHat, FolderOpen, Handshake
 } from 'lucide-react'
 
 const G = '#C9960A'   // dourado Aggio
@@ -19,6 +19,7 @@ const navItems = [
     children: [
       { path: '/comercial/servicos', label: 'Funil · Serviços', icon: Briefcase },
       { path: '/comercial/obras', label: 'Funil · Obras (INSS)', icon: HardHat },
+      { path: '/comercial/comissionadores', label: 'Comissionadores', icon: Handshake },
     ],
   },
   { path: '/clientes', label: 'Clientes', icon: Users },
