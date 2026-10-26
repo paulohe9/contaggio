@@ -16,6 +16,8 @@ import Relatorios from './pages/relatorios/Relatorios'
 import Funil from './pages/comercial/Funil'
 import Documentos from './pages/documentos/Documentos'
 import PortalCliente from './pages/PortalCliente'
+import Comissionadores from './pages/comercial/Comissionadores'
+import DocumentoComercial from './pages/comercial/DocumentoComercial'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -33,6 +35,7 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/acesso/:token" element={<AcessoEmail />} />
       <Route path="/portal/:token" element={<PortalCliente />} />
+      <Route path="/comercial/documento/:id" element={<PrivateRoute><DocumentoComercial /></PrivateRoute>} />
       <Route path="/*" element={
         <PrivateRoute>
           <Layout>
@@ -49,6 +52,7 @@ function AppRoutes() {
               <Route path="/documentos" element={<Documentos />} />
               <Route path="/comercial/servicos" element={<Funil key="servicos" funil="servicos" />} />
               <Route path="/comercial/obras" element={<Funil key="obras" funil="obras" />} />
+              <Route path="/comercial/comissionadores" element={<Comissionadores />} />
               <Route path="/relatorios" element={<Relatorios />} />
               <Route path="/usuarios" element={<Usuarios />} />
             </Routes>
