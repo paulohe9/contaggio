@@ -3,8 +3,9 @@ import { supabase } from '../../lib/supabase'
 import { format, parseISO, subMonths, startOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBar } from '../../components/ui'
-import { Plus, Landmark, Pencil, PiggyBank, TrendingUp } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { Plus, Landmark, PiggyBank, TrendingUp, Pencil, Undo2, Trash2 } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { hojeISO, isoDe, addMesesISO, fmtData, fmtBRL, inputBase } from '../../lib/util'
 
 const PARCEIROS = ['rayssa', 'paulo', 'rilary']
 const PARCEIRO_COR = { rayssa: '#8b5cf6', paulo: '#3b82f6', rilary: '#f59e0b' }
@@ -14,44 +15,58 @@ const tipoCores = { receber: 'green', pagar: 'red', transferencia: 'blue' }
 const statusCores = { pendente: 'yellow', pago: 'green', cancelado: 'slate', atrasado: 'red' }
 const tipoLabel = { receber: 'Receber', pagar: 'Pagar', transferencia: 'Transferência' }
 
-const CATEGORIAS = [
-  'Honorários', 'Imposto Federal', 'Imposto Estadual', 'Imposto Municipal',
-  'Simples Nacional', 'FGTS', 'INSS', 'Folha de Pagamento',
-  'Distribuição de Lucros', 'Reserva Financeira', 'Aluguel', 'Energia / Água / Internet',
-  'Fornecedor', 'Despesa Administrativa', 'Investimento',
-  'Receita Extraordinária', 'Multa / Juros', 'Outros',
+// Categorias separadas por tipo — no "A Receber" só aparecem as de receita, no "A Pagar" só as de despesa
+const CAT_RECEBER = [
+  'Honorários', 'Regularização de Obra', 'Abertura / Legalização', 'Serviço Avulso',
+  'Reembolso de Despesas', 'Receita Extraordinária', 'Outros',
 ]
+const CAT_PAGAR = [
+  'Imposto Federal', 'Imposto Estadual', 'Imposto Municipal', 'Simples Nacional', 'FGTS', 'INSS',
+  'Folha de Pagamento', 'Pró-labore', 'Distribuição de Lucros', 'Reserva Financeira', 'Aluguel',
+  'Energia / Água / Internet', 'Sistemas / Softwares', 'Fornecedor', 'Despesa Administrativa',
+  'Marketing', 'Investimento', 'Tarifas Bancárias', 'Multa / Juros', 'Outros',
+]
+const CATS = { receber: CAT_RECEBER, pagar: CAT_PAGAR }
+
+const filtroInicial = {
+  busca: '', situacao: 'abertos', categoria: '', cliente: '', conta: '', recorrencia: '',
+  campoData: 'due_date', periodo: 'todos', ini: '', fim: '',
+}
+
+const tituloVazio = {
+  description: '', amount: '', due_date: '', client_id: '', category: '', notes: '',
+  is_recurring: false, parcelas: 1, pagoAgora: false, data_pagamento: '', bank_account_id: '',
+}
 
 export default function Financeiro() {
   const [transacoes, setTransacoes] = useState([])
   const [contas, setContas] = useState([])
+  const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('visao_geral')
-  const [showModal, setShowModal] = useState(false)
-  const [showContaModal, setShowContaModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false })
-  const [pagamentoModal, setPagamentoModal] = useState(null)
-  const [editandoId, setEditandoId] = useState(null)
+  const [showContaModal, setShowContaModal] = useState(false)
   const [contaForm, setContaForm] = useState({ name: '', bank: '', balance: '0', type: 'corrente' })
-  const [clientes, setClientes] = useState([])
+  const [filtros, setFiltros] = useState({ receber: { ...filtroInicial }, pagar: { ...filtroInicial } })
+  const [tituloModal, setTituloModal] = useState(null) // { id?, tipo, pago?, form }
+  const [baixa, setBaixa] = useState(null)              // { t, data_pagamento, bank_account_id }
   // Reserva
   const [reservaMovements, setReservaMovements] = useState([])
   const [showReservaModal, setShowReservaModal] = useState(false)
-  const [reservaForm, setReservaForm] = useState({ type: 'deposito', amount: '', date: new Date().toISOString().slice(0,10), description: '', bank_account_id: '' })
+  const [reservaForm, setReservaForm] = useState({ type: 'deposito', amount: '', date: hojeISO(), description: '', bank_account_id: '' })
   // Distribuição
   const [distributions, setDistributions] = useState([])
   const [showDistModal, setShowDistModal] = useState(false)
-  const [distForm, setDistForm] = useState({ month: new Date().toISOString().slice(0,7), rayssa: '', paulo: '', rilary: '', notes: '', bank_account_id: '' })
+  const [distForm, setDistForm] = useState({ month: hojeISO().slice(0, 7), rayssa: '', paulo: '', rilary: '', notes: '', bank_account_id: '' })
 
   useEffect(() => { fetchTudo() }, [])
 
   async function fetchTudo() {
     setLoading(true)
     const [tRes, cRes, clRes, rRes, dRes] = await Promise.all([
-      supabase.from('financial_transactions').select('*, clients(razao_social)').order('due_date', { ascending: false }),
+      supabase.from('financial_transactions').select('*, clients(razao_social)').order('due_date', { ascending: true }),
       supabase.from('bank_accounts').select('*').order('name'),
-      supabase.from('clients').select('id, razao_social').order('razao_social'),
+      supabase.from('clients').select('id, razao_social, telefone').order('razao_social'),
       supabase.from('reserva_movements').select('*').order('date', { ascending: false }),
       supabase.from('profit_distributions').select('*').order('month', { ascending: false }),
     ])
@@ -63,93 +78,163 @@ export default function Financeiro() {
     setLoading(false)
   }
 
-  const hoje = new Date()
-  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+  const fmt = fmtBRL
+  const hoje = hojeISO()
+  const em7dias = hojeISO(7)
+  const mesAtual = hoje.slice(0, 7)
+  const nomeConta = (id) => { const c = contas.find(x => x.id === id); return c ? c.name : '' }
 
-  // Converte string de data ISO sem deslocar fuso
-  function parseDateLocal(str) {
-    if (!str) return null
-    const [y, m, d] = str.slice(0, 10).split('-').map(Number)
-    return new Date(y, m - 1, d)
+  // ─── Situação de cada título ───
+  function situacao(t) {
+    if (t.status === 'pago') return 'pago'
+    if (t.status === 'cancelado') return 'cancelado'
+    if (t.due_date && t.due_date < hoje) return 'vencido'
+    return 'aberto'
+  }
+  const diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000)
+
+  function intervaloPeriodo(f) {
+    const d = new Date()
+    if (f.periodo === 'mes_atual') return [isoDe(new Date(d.getFullYear(), d.getMonth(), 1)), isoDe(new Date(d.getFullYear(), d.getMonth() + 1, 0))]
+    if (f.periodo === 'mes_anterior') return [isoDe(new Date(d.getFullYear(), d.getMonth() - 1, 1)), isoDe(new Date(d.getFullYear(), d.getMonth(), 0))]
+    if (f.periodo === 'proximo_mes') return [isoDe(new Date(d.getFullYear(), d.getMonth() + 1, 1)), isoDe(new Date(d.getFullYear(), d.getMonth() + 2, 0))]
+    if (f.periodo === 'personalizado') return [f.ini || null, f.fim || null]
+    return [null, null]
   }
 
-  // Receber (entrada) — usa data_pagamento; se ausente, usa due_date como fallback
-  const recebidoMes = transacoes.filter(t => {
-    if (t.type !== 'receber' || t.status !== 'pago') return false
-    const dt = parseDateLocal(t.data_pagamento || t.due_date)
-    return dt && dt >= inicioMes && dt <= fimMes
-  }).reduce((s, t) => s + Number(t.amount), 0)
-
-  const aReceber = transacoes.filter(t =>
-    t.type === 'receber' && t.status === 'pendente'
-  ).reduce((s, t) => s + Number(t.amount), 0)
-
-  const vencidosNaoPagos = transacoes.filter(t => {
-    if (t.type !== 'receber' || t.status !== 'pendente') return false
-    const dt = parseDateLocal(t.due_date)
-    return dt && dt < hoje
-  }).reduce((s, t) => s + Number(t.amount), 0)
-
-  const totalAReceber = aReceber || 1
-  const percInadimplencia = Math.round((vencidosNaoPagos / totalAReceber) * 100)
-
-  // Pagar (saída)
-  const aPagar = transacoes.filter(t =>
-    t.type === 'pagar' && t.status === 'pendente'
-  ).reduce((s, t) => s + Number(t.amount), 0)
-
-  const pagosMes = transacoes.filter(t => {
-    if (t.type !== 'pagar' || t.status !== 'pago') return false
-    const dt = parseDateLocal(t.data_pagamento || t.due_date)
-    return dt && dt >= inicioMes && dt <= fimMes
-  }).reduce((s, t) => s + Number(t.amount), 0)
-
-  const saldoTotal = contas.reduce((s, c) => s + Number(c.balance), 0)
-
-  function abrirEdicao(t) {
-    setEditandoId(t.id)
-    setForm({
-      type: t.type || 'receber',
-      description: t.description || '',
-      amount: t.amount || '',
-      due_date: t.due_date || '',
-      data_pagamento: t.data_pagamento || '',
-      status: t.status || 'pendente',
-      category: t.category || '',
-      client_id: t.client_id || '',
-      notes: t.notes || '',
-      is_recurring: t.is_recurring || false,
-      bank_account_id: t.bank_account_id || '',
+  function titulosDo(tipo) {
+    const f = filtros[tipo]
+    const [ini, fim] = intervaloPeriodo(f)
+    const q = f.busca.toLowerCase()
+    const lista = transacoes.filter(t => {
+      if (t.type !== tipo) return false
+      const sit = situacao(t)
+      if (f.situacao === 'abertos' && !['aberto', 'vencido'].includes(sit)) return false
+      if (f.situacao === 'vencidos' && sit !== 'vencido') return false
+      if (f.situacao === 'a_vencer_7' && !(sit === 'aberto' && t.due_date && t.due_date <= em7dias)) return false
+      if (f.situacao === 'pagos' && sit !== 'pago') return false
+      if (f.situacao === 'cancelados' && sit !== 'cancelado') return false
+      if (q && !`${t.description || ''} ${t.clients?.razao_social || ''} ${t.category || ''} ${t.notes || ''}`.toLowerCase().includes(q)) return false
+      if (f.categoria && t.category !== f.categoria) return false
+      if (f.cliente && t.client_id !== f.cliente) return false
+      if (f.conta && t.bank_account_id !== f.conta) return false
+      if (f.recorrencia === 'sim' && !t.is_recurring) return false
+      if (f.recorrencia === 'nao' && t.is_recurring) return false
+      const dataRef = f.campoData === 'data_pagamento' ? t.data_pagamento : t.due_date
+      if (ini && (!dataRef || dataRef < ini)) return false
+      if (fim && (!dataRef || dataRef > fim)) return false
+      return true
     })
-    setShowModal(true)
+    return lista.sort((a, b) => f.situacao === 'pagos'
+      ? (b.data_pagamento || '').localeCompare(a.data_pagamento || '')
+      : (a.due_date || '9999').localeCompare(b.due_date || '9999'))
   }
 
-  async function salvarTransacao(e) {
+  // ─── Indicadores ───
+  const soma = (arr) => arr.reduce((s, t) => s + Number(t.amount || 0), 0)
+  const doTipo = (tipo) => transacoes.filter(t => t.type === tipo)
+  function indicadores(tipo) {
+    const ts = doTipo(tipo)
+    const abertos = ts.filter(t => ['aberto', 'vencido'].includes(situacao(t)))
+    const vencidos = ts.filter(t => situacao(t) === 'vencido')
+    const prox7 = ts.filter(t => situacao(t) === 'aberto' && t.due_date && t.due_date <= em7dias)
+    const pagosMes = ts.filter(t => t.status === 'pago' && (t.data_pagamento || '').slice(0, 7) === mesAtual)
+    return { abertos, vencidos, prox7, pagosMes }
+  }
+  const indR = indicadores('receber')
+  const indP = indicadores('pagar')
+  const saldoTotal = contas.reduce((s, c) => s + Number(c.balance), 0)
+  const percInadimplencia = soma(indR.abertos) > 0 ? Math.round(soma(indR.vencidos) / soma(indR.abertos) * 100) : 0
+
+  // ─── Saldo bancário ───
+  async function ajustarSaldo(contaId, delta) {
+    if (!contaId || !delta) return
+    const { data: atual } = await supabase.from('bank_accounts').select('balance').eq('id', contaId).single()
+    const novo = Number(atual?.balance || 0) + delta
+    await supabase.from('bank_accounts').update({ balance: novo }).eq('id', contaId)
+    setContas(cs => cs.map(c => c.id === contaId ? { ...c, balance: novo } : c))
+  }
+
+  // ─── Títulos ───
+  function novoTitulo(tipo) {
+    setTituloModal({ tipo, form: { ...tituloVazio, due_date: hoje, data_pagamento: hoje, bank_account_id: contas[0]?.id || '' } })
+  }
+  function editarTitulo(t) {
+    setTituloModal({
+      id: t.id, tipo: t.type, pago: t.status === 'pago',
+      form: { ...tituloVazio, description: t.description || '', amount: t.amount ?? '', due_date: t.due_date || '', client_id: t.client_id || '', category: t.category || '', notes: t.notes || '', is_recurring: !!t.is_recurring },
+    })
+  }
+  const setTF = (campo, valor) => setTituloModal(m => ({ ...m, form: { ...m.form, [campo]: valor } }))
+
+  async function salvarTitulo(e) {
     e.preventDefault(); setSaving(true)
-    const payload = {
-      type: form.type,
-      description: form.description,
-      amount: Number(form.amount),
-      client_id: form.client_id || null,
-      due_date: form.due_date || null,
-      data_pagamento: form.data_pagamento || null,
-      status: form.status,
-      category: form.category || null,
-      notes: form.notes || null,
-      is_recurring: form.is_recurring,
-      bank_account_id: form.bank_account_id || null,
+    const { id, tipo, form: f } = tituloModal
+    const base = {
+      type: tipo,
+      description: f.description.trim(),
+      amount: Number(f.amount),
+      due_date: f.due_date || null,
+      client_id: f.client_id || null,
+      category: f.category || null,
+      notes: f.notes || null,
+      is_recurring: !!f.is_recurring,
     }
     let error
-    if (editandoId) {
-      ;({ error } = await supabase.from('financial_transactions').update(payload).eq('id', editandoId))
+    if (id) {
+      if (tituloModal.pago) delete base.amount // valor de título baixado só muda estornando
+      ;({ error } = await supabase.from('financial_transactions').update({ ...base, updated_at: new Date().toISOString() }).eq('id', id))
     } else {
-      ;({ error } = await supabase.from('financial_transactions').insert(payload))
+      const n = f.is_recurring ? 1 : Math.max(1, Math.min(60, Number(f.parcelas) || 1))
+      const pagarJa = tipo === 'pagar' && f.pagoAgora && n === 1
+      if (pagarJa && !f.bank_account_id) { setSaving(false); alert('Selecione a conta bancária do pagamento.'); return }
+      const registros = Array.from({ length: n }, (_, i) => ({
+        ...base,
+        description: n > 1 ? `${base.description} (${i + 1}/${n})` : base.description,
+        due_date: base.due_date ? addMesesISO(base.due_date, i) : null,
+        status: pagarJa ? 'pago' : 'pendente',
+        data_pagamento: pagarJa ? (f.data_pagamento || hoje) : null,
+        bank_account_id: pagarJa ? f.bank_account_id : null,
+      }))
+      ;({ error } = await supabase.from('financial_transactions').insert(registros))
+      if (!error && pagarJa) await ajustarSaldo(f.bank_account_id, -Number(f.amount))
     }
-    if (error) { alert('Erro ao salvar: ' + error.message); setSaving(false); return }
-    setSaving(false); setShowModal(false); setEditandoId(null)
-    setForm({ type: 'receber', description: '', amount: '', due_date: '', data_pagamento: '', status: 'pendente', category: '', client_id: '', notes: '', is_recurring: false, bank_account_id: '' })
+    setSaving(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    setTituloModal(null)
     fetchTudo()
+  }
+
+  function abrirBaixa(t) {
+    setBaixa({ t, data_pagamento: hoje, bank_account_id: contas[0]?.id || '' })
+  }
+  async function confirmarBaixa(e) {
+    e.preventDefault(); setSaving(true)
+    const { t, data_pagamento, bank_account_id } = baixa
+    const { error } = await supabase.from('financial_transactions')
+      .update({ status: 'pago', data_pagamento, bank_account_id, updated_at: new Date().toISOString() }).eq('id', t.id)
+    if (error) { setSaving(false); alert('Erro na baixa: ' + error.message); return }
+    await ajustarSaldo(bank_account_id, t.type === 'receber' ? Number(t.amount) : -Number(t.amount))
+    setTransacoes(ts => ts.map(x => x.id === t.id ? { ...x, status: 'pago', data_pagamento, bank_account_id } : x))
+    setSaving(false); setBaixa(null)
+  }
+  async function estornar(t) {
+    if (!confirm(`Estornar a baixa de "${t.description}"?\nO título volta para "em aberto"${t.bank_account_id ? ' e o saldo da conta é corrigido' : ''}.`)) return
+    const { error } = await supabase.from('financial_transactions')
+      .update({ status: 'pendente', data_pagamento: null, bank_account_id: null, updated_at: new Date().toISOString() }).eq('id', t.id)
+    if (error) { alert('Erro: ' + error.message); return }
+    await ajustarSaldo(t.bank_account_id, t.type === 'receber' ? -Number(t.amount) : Number(t.amount))
+    setTransacoes(ts => ts.map(x => x.id === t.id ? { ...x, status: 'pendente', data_pagamento: null, bank_account_id: null } : x))
+  }
+  async function mudarStatus(t, status) {
+    await supabase.from('financial_transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', t.id)
+    setTransacoes(ts => ts.map(x => x.id === t.id ? { ...x, status } : x))
+  }
+  async function excluir(t) {
+    if (!confirm(`Excluir o título "${t.description}"? Essa ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('financial_transactions').delete().eq('id', t.id)
+    if (error) { alert('Erro: ' + error.message); return }
+    setTransacoes(ts => ts.filter(x => x.id !== t.id))
   }
 
   async function salvarConta(e) {
@@ -159,31 +244,6 @@ export default function Financeiro() {
     setSaving(false); setShowContaModal(false)
     setContaForm({ name: '', bank: '', balance: '0', type: 'corrente' })
     fetchTudo()
-  }
-
-  async function alterarStatus(id, status, data_pagamento, bank_account_id) {
-    const upd = { status, updated_at: new Date().toISOString() }
-    if (data_pagamento) upd.data_pagamento = data_pagamento
-    if (bank_account_id) upd.bank_account_id = bank_account_id
-    await supabase.from('financial_transactions').update(upd).eq('id', id)
-    setTransacoes(ts => ts.map(t => t.id === id ? { ...t, status, data_pagamento: data_pagamento || t.data_pagamento, bank_account_id: bank_account_id || t.bank_account_id } : t))
-    setPagamentoModal(null)
-  }
-
-  async function confirmarPagamento(e) {
-    e.preventDefault()
-    const { id, data_pagamento, status, bank_account_id, amount, tipo } = pagamentoModal
-    await alterarStatus(id, status, data_pagamento || new Date().toISOString().slice(0, 10), bank_account_id)
-    // Atualizar saldo da conta bancária
-    if (bank_account_id) {
-      const conta = contas.find(c => c.id === bank_account_id)
-      if (conta) {
-        const delta = tipo === 'receber' ? Number(amount) : -Number(amount)
-        const novoSaldo = Number(conta.balance) + delta
-        await supabase.from('bank_accounts').update({ balance: novoSaldo }).eq('id', bank_account_id)
-        setContas(cs => cs.map(c => c.id === bank_account_id ? { ...c, balance: novoSaldo } : c))
-      }
-    }
   }
 
   async function salvarReserva(e) {
@@ -267,56 +327,12 @@ export default function Financeiro() {
     })
   })()
 
-  const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
-
   // Import Asaas
   const [showImportModal, setShowImportModal] = useState(false)
   const [importLinhas, setImportLinhas] = useState([])
   const [importSelecionadas, setImportSelecionadas] = useState([])
   const [importando, setImportando] = useState(false)
   const [importContaId, setImportContaId] = useState('')
-
-  // Filtros
-  const [busca, setBusca] = useState('')
-  const [filtroTipo, setFiltroTipo] = useState('')
-  const [filtroStatus2, setFiltroStatus2] = useState('')
-  const [filtroCategoria, setFiltroCategoria] = useState('')
-  const [filtroDataIni, setFiltroDataIni] = useState('')
-  const [filtroDataFim, setFiltroDataFim] = useState('')
-
-  const transacoesFiltradas = transacoes.filter(t => {
-    const q = busca.toLowerCase()
-    const matchBusca = !busca || t.description?.toLowerCase().includes(q) || t.clients?.razao_social?.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q)
-    const matchTipo = !filtroTipo || t.type === filtroTipo
-    const matchStatus = !filtroStatus2 || t.status === filtroStatus2
-    const matchCat = !filtroCategoria || t.category === filtroCategoria
-    const matchIni = !filtroDataIni || (t.due_date && t.due_date >= filtroDataIni)
-    const matchFim = !filtroDataFim || (t.due_date && t.due_date <= filtroDataFim)
-    return matchBusca && matchTipo && matchStatus && matchCat && matchIni && matchFim
-  })
-
-  function exportarCSV() {
-    const cabecalho = ['Descrição', 'Tipo', 'Valor', 'Vencimento', 'Pagamento', 'Status', 'Categoria', 'Cliente', 'Recorrente']
-    const linhas = transacoesFiltradas.map(t => [
-      `"${(t.description || '').replace(/"/g, '""')}"`,
-      tipoLabel[t.type] || t.type,
-      Number(t.amount).toFixed(2).replace('.', ','),
-      t.due_date || '',
-      t.data_pagamento || '',
-      t.status,
-      t.category || '',
-      `"${(t.clients?.razao_social || '').replace(/"/g, '""')}"`,
-      t.is_recurring ? 'Sim' : 'Não',
-    ])
-    const csv = [cabecalho, ...linhas].map(r => r.join(';')).join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `financeiro_${new Date().toISOString().slice(0,10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 
   function lerArquivoAsaas(e) {
     const file = e.target.files?.[0]
@@ -400,126 +416,315 @@ export default function Financeiro() {
     alert(`${registros.length} transação(ões) importada(s) com sucesso!`)
   }
 
+  function exportarCSV(tipo) {
+    const lista = titulosDo(tipo)
+    const cab = ['Descrição', 'Cliente', 'Categoria', 'Vencimento', 'Valor', 'Situação', 'Data pagamento', 'Conta', 'Recorrente', 'Observações']
+    const q = (s) => `"${(s || '').toString().replace(/"/g, '""')}"`
+    const linhas = lista.map(t => [
+      q(t.description), q(t.clients?.razao_social), q(t.category), fmtData(t.due_date),
+      Number(t.amount).toFixed(2).replace('.', ','), situacao(t), t.data_pagamento ? fmtData(t.data_pagamento) : '',
+      q(nomeConta(t.bank_account_id)), t.is_recurring ? 'Sim' : 'Não', q(t.notes),
+    ])
+    const csv = [cab, ...linhas].map(r => r.join(';')).join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${tipo === 'receber' ? 'contas_a_receber' : 'contas_a_pagar'}_${hoje}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const tabs = [
     { key: 'visao_geral', label: 'Visão Geral', icon: '📊' },
+    { key: 'receber', label: `A Receber (${indR.abertos.length})`, icon: '📥' },
+    { key: 'pagar', label: `A Pagar (${indP.abertos.length})`, icon: '📤' },
     { key: 'contas', label: `Contas (${contas.length})`, icon: '🏦' },
-    { key: 'transacoes', label: `Movimentações (${transacoesFiltradas.length})`, icon: '💳' },
     { key: 'reserva', label: 'Reserva', icon: '🐷' },
     { key: 'distribuicao', label: 'Distribuição', icon: '💰' },
   ]
 
+  // ─── Pedaços de UI ───
+  function situacaoCell(t) {
+    const sit = situacao(t)
+    if (sit === 'pago') return (
+      <div>
+        <Badge color="green">{t.type === 'receber' ? 'Recebido' : 'Pago'} {fmtData(t.data_pagamento)}</Badge>
+        {t.bank_account_id && <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>🏦 {nomeConta(t.bank_account_id)}</div>}
+        {t.data_pagamento && t.due_date && t.data_pagamento > t.due_date && <div style={{ fontSize: 10.5, color: '#d97706', marginTop: 2 }}>pago com atraso</div>}
+      </div>
+    )
+    if (sit === 'cancelado') return <Badge color="slate">Cancelado</Badge>
+    if (sit === 'vencido') return <Badge color="red">Vencido há {diasEntre(t.due_date, hoje)}d</Badge>
+    const d = t.due_date ? diasEntre(hoje, t.due_date) : null
+    return <Badge color={d !== null && d <= 3 ? 'orange' : 'yellow'}>{d === 0 ? 'Vence hoje' : d === 1 ? 'Vence amanhã' : 'Em aberto'}</Badge>
+  }
+
+  const selStyle = { ...inputBase, cursor: 'pointer' }
+
+  function barraFiltros(tipo) {
+    const f = filtros[tipo]
+    const set = (campo, valor) => setFiltros(fs => ({ ...fs, [tipo]: { ...fs[tipo], [campo]: valor } }))
+    const alterado = JSON.stringify(f) !== JSON.stringify(filtroInicial)
+    const situacoes = [
+      ['abertos', 'Em aberto'], ['vencidos', 'Vencidos'], ['a_vencer_7', 'Vencem em 7 dias'],
+      ['pagos', tipo === 'receber' ? 'Recebidos' : 'Pagos'], ['cancelados', 'Cancelados'], ['todos', 'Todos'],
+    ]
+    return (
+      <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e2e8f0', padding: '12px 14px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
+          {situacoes.map(([v, l]) => (
+            <button key={v} onClick={() => set('situacao', v)} style={{
+              padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
+              border: f.situacao === v ? '1px solid #2563eb' : '1px solid #e2e8f0',
+              background: f.situacao === v ? '#2563eb' : 'white', color: f.situacao === v ? 'white' : '#475569',
+            }}>{l}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input value={f.busca} onChange={e => set('busca', e.target.value)} placeholder="🔍 Buscar descrição, cliente, observação..." style={{ ...inputBase, flex: 1, minWidth: 200 }} />
+          <select value={f.categoria} onChange={e => set('categoria', e.target.value)} style={selStyle}>
+            <option value="">Todas as categorias</option>
+            {CATS[tipo].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {tipo === 'receber' && (
+            <select value={f.cliente} onChange={e => set('cliente', e.target.value)} style={{ ...selStyle, maxWidth: 220 }}>
+              <option value="">Todos os clientes</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
+            </select>
+          )}
+          <select value={f.conta} onChange={e => set('conta', e.target.value)} style={selStyle}>
+            <option value="">Todas as contas</option>
+            {contas.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={f.recorrencia} onChange={e => set('recorrencia', e.target.value)} style={selStyle}>
+            <option value="">Recorrentes e avulsos</option>
+            <option value="sim">Só recorrentes</option>
+            <option value="nao">Só avulsos</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+          <select value={f.campoData} onChange={e => set('campoData', e.target.value)} style={selStyle}>
+            <option value="due_date">Data de vencimento</option>
+            <option value="data_pagamento">Data de {tipo === 'receber' ? 'recebimento' : 'pagamento'}</option>
+          </select>
+          <select value={f.periodo} onChange={e => set('periodo', e.target.value)} style={selStyle}>
+            <option value="todos">Qualquer período</option>
+            <option value="mes_atual">Este mês</option>
+            <option value="mes_anterior">Mês passado</option>
+            <option value="proximo_mes">Próximo mês</option>
+            <option value="personalizado">Personalizado</option>
+          </select>
+          {f.periodo === 'personalizado' && <>
+            <input type="date" value={f.ini} onChange={e => set('ini', e.target.value)} style={selStyle} />
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>até</span>
+            <input type="date" value={f.fim} onChange={e => set('fim', e.target.value)} style={selStyle} />
+          </>}
+          {alterado && (
+            <button onClick={() => setFiltros(fs => ({ ...fs, [tipo]: { ...filtroInicial } }))}
+              style={{ padding: '8px 12px', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 12, background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}>
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function tabelaTitulos(tipo) {
+    const lista = titulosDo(tipo)
+    const cor = tipo === 'receber' ? '#059669' : '#dc2626'
+    return (
+      <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                {[tipo === 'receber' ? 'Cliente / Descrição' : 'Descrição', 'Categoria', 'Vencimento', 'Valor', 'Situação', 'Ações'].map(h => (
+                  <th key={h} style={{ padding: '11px 16px', textAlign: h === 'Valor' ? 'right' : 'left', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Carregando...</td></tr>
+              ) : lista.length === 0 ? (
+                <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
+                  <div style={{ fontSize: 34, marginBottom: 8 }}>{tipo === 'receber' ? '📥' : '📤'}</div>
+                  <div style={{ fontWeight: 600, color: '#475569' }}>Nenhum título encontrado com esses filtros</div>
+                </td></tr>
+              ) : lista.map(t => {
+                const sit = situacao(t)
+                return (
+                  <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9', background: sit === 'vencido' ? '#fffbeb' : 'white' }}>
+                    <td style={{ padding: '11px 16px', maxWidth: 320 }}>
+                      {tipo === 'receber' && t.clients && <div style={{ fontWeight: 700, color: '#1e293b' }}>{t.clients.razao_social}</div>}
+                      <div style={{ fontWeight: tipo === 'receber' && t.clients ? 400 : 600, color: tipo === 'receber' && t.clients ? '#64748b' : '#1e293b', fontSize: tipo === 'receber' && t.clients ? 12 : 13 }}>{t.description}</div>
+                      {t.is_recurring && <span style={{ fontSize: 10, color: '#3b82f6', fontWeight: 700 }}>↻ Recorrente</span>}
+                      {t.notes && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{t.notes}</div>}
+                    </td>
+                    <td style={{ padding: '11px 16px', fontSize: 12, color: '#64748b' }}>{t.category || '—'}</td>
+                    <td style={{ padding: '11px 16px', fontSize: 12, color: sit === 'vencido' ? '#dc2626' : '#475569', fontWeight: sit === 'vencido' ? 700 : 400, whiteSpace: 'nowrap' }}>{fmtData(t.due_date)}</td>
+                    <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 800, color: sit === 'cancelado' ? '#94a3b8' : cor, fontFamily: 'monospace', whiteSpace: 'nowrap', textDecoration: sit === 'cancelado' ? 'line-through' : 'none' }}>{fmt(t.amount)}</td>
+                    <td style={{ padding: '11px 16px' }}>{situacaoCell(t)}</td>
+                    <td style={{ padding: '11px 16px' }}>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {(sit === 'aberto' || sit === 'vencido') && (
+                          <Btn size="sm" variant="success" onClick={() => abrirBaixa(t)}>✓ Baixar</Btn>
+                        )}
+                        {sit === 'pago' && (
+                          <button title="Estornar baixa" onClick={() => estornar(t)} style={miniBtn}><Undo2 size={12} /> Estornar</button>
+                        )}
+                        <button title="Editar" onClick={() => editarTitulo(t)} style={miniBtn}><Pencil size={12} /></button>
+                        {(sit === 'aberto' || sit === 'vencido') && (
+                          <button title="Cancelar título" onClick={() => mudarStatus(t, 'cancelado')} style={{ ...miniBtn, color: '#dc2626' }}>✕</button>
+                        )}
+                        {sit === 'cancelado' && (
+                          <button title="Reativar" onClick={() => mudarStatus(t, 'pendente')} style={miniBtn}>↺</button>
+                        )}
+                        {sit !== 'pago' && (
+                          <button title="Excluir" onClick={() => excluir(t)} style={{ ...miniBtn, color: '#dc2626' }}><Trash2 size={12} /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            {lista.length > 0 && (
+              <tfoot>
+                <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                  <td colSpan={3} style={{ padding: '11px 16px', fontSize: 12, color: '#64748b', fontWeight: 600 }}>{lista.length} título(s)</td>
+                  <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 900, color: cor, fontFamily: 'monospace' }}>{fmt(soma(lista.filter(t => t.status !== 'cancelado')))}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  function listaResumo(tipo, titulo, titulos) {
+    return (
+      <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 14 }}>{titulo}</div>
+          <button onClick={() => setTab(tipo)} style={{ border: 'none', background: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Ver todos →</button>
+        </div>
+        {titulos.slice(0, 8).map(t => (
+          <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid #f1f5f9', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.clients?.razao_social || t.description}</div>
+              <div style={{ fontSize: 11, color: situacao(t) === 'vencido' ? '#dc2626' : '#94a3b8', fontWeight: situacao(t) === 'vencido' ? 700 : 400 }}>
+                {fmtData(t.due_date)}{situacao(t) === 'vencido' ? ' · vencido' : ''}
+              </div>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: tipo === 'receber' ? '#059669' : '#dc2626', whiteSpace: 'nowrap' }}>{fmt(t.amount)}</div>
+            <Btn size="sm" variant="success" onClick={() => abrirBaixa(t)}>✓</Btn>
+          </div>
+        ))}
+        {titulos.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 20, fontSize: 13 }}>Nada pendente nos próximos 7 dias 🎉</div>}
+      </div>
+    )
+  }
+
+  const pendentesProximos = (ind) => [...ind.vencidos, ...ind.prox7].sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
+
   return (
-    <div style={{ maxWidth: 1200 }}>
+    <div style={{ maxWidth: 1240 }}>
       <PageHeader
         title="Financeiro"
-        subtitle="Controle de entradas, saídas e contas bancárias"
+        subtitle="Lance os títulos e dê baixa quando o pagamento acontecer"
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {tab === 'visao_geral' && <>
+              <Btn variant="secondary" onClick={() => novoTitulo('pagar')}><Plus size={14} /> A Pagar</Btn>
+              <Btn onClick={() => novoTitulo('receber')}><Plus size={14} /> A Receber</Btn>
+            </>}
+            {tab === 'receber' && <>
+              <Btn variant="secondary" onClick={() => exportarCSV('receber')}>⬇ Exportar CSV</Btn>
+              <Btn variant="secondary" onClick={() => setShowImportModal(true)}>⬆ Importar Asaas</Btn>
+              <Btn onClick={() => novoTitulo('receber')}><Plus size={14} /> Novo título a receber</Btn>
+            </>}
+            {tab === 'pagar' && <>
+              <Btn variant="secondary" onClick={() => exportarCSV('pagar')}>⬇ Exportar CSV</Btn>
+              <Btn onClick={() => novoTitulo('pagar')}><Plus size={14} /> Nova conta a pagar</Btn>
+            </>}
+            {tab === 'contas' && <Btn onClick={() => setShowContaModal(true)}><Landmark size={14} /> Nova Conta</Btn>}
             {tab === 'reserva' && <Btn onClick={() => setShowReservaModal(true)}><PiggyBank size={14} /> Movimentar Reserva</Btn>}
             {tab === 'distribuicao' && <Btn onClick={() => setShowDistModal(true)}><TrendingUp size={14} /> Registrar Distribuição</Btn>}
-            {(tab === 'visao_geral' || tab === 'contas' || tab === 'transacoes') && <>
-              <Btn variant="secondary" onClick={() => setShowContaModal(true)}><Landmark size={14} /> Nova Conta</Btn>
-              <Btn variant="secondary" onClick={exportarCSV} title="Exportar transações filtradas como CSV">⬇ Exportar CSV</Btn>
-              <Btn variant="secondary" onClick={() => setShowImportModal(true)} title="Importar extrato do Asaas">⬆ Importar Asaas</Btn>
-              <Btn onClick={() => setShowModal(true)}><Plus size={14} /> Nova Movimentação</Btn>
-            </>}
           </div>
         }
       />
 
-      {/* Cards Resumo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12, marginBottom: 24 }}>
-        <StatCard label="Recebido no Mês" value={fmt(recebidoMes)} icon="📈" color="#10b981" bg="#f0fdf4" border="#bbf7d0" />
-        <StatCard label="A Receber" value={fmt(aReceber)} icon="⏳" color="#3b82f6" bg="#eff6ff" border="#bfdbfe" />
-        <StatCard
-          label="Inadimplência"
-          value={`${aReceber > 0 ? percInadimplencia : 0}%`}
-          icon="⚠️"
-          color={percInadimplencia > 20 ? '#ef4444' : percInadimplencia > 5 ? '#f59e0b' : '#10b981'}
-          bg={percInadimplencia > 20 ? '#fef2f2' : percInadimplencia > 5 ? '#fffbeb' : '#f0fdf4'}
-          border={percInadimplencia > 20 ? '#fecaca' : percInadimplencia > 5 ? '#fde68a' : '#bbf7d0'}
-        />
-        <StatCard label="A Pagar" value={fmt(aPagar)} icon="📉" color="#ef4444" bg="#fef2f2" border="#fecaca" />
-        <StatCard label="Pagos no Mês" value={fmt(pagosMes)} icon="✅" color="#64748b" bg="#f8fafc" border="#e2e8f0" />
-        <StatCard label="Reserva" value={fmt(reservaSaldo)} icon="🐷" color="#8b5cf6" bg="#f5f3ff" border="#ddd6fe" />
-        <StatCard label="Dist. Total Mês" value={fmt(distributions.filter(d => d.month.slice(0,7) === new Date().toISOString().slice(0,7)).reduce((s,d) => s + Number(d.amount), 0))} icon="💰" color="#f59e0b" bg="#fffbeb" border="#fde68a" />
-      </div>
-
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
-      {/* Filtros globais */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, marginTop: 4 }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
-          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 14 }}>🔍</span>
-          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por descrição, cliente, categoria..."
-            style={{ width: '100%', padding: '8px 10px 8px 32px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white' }} />
-        </div>
-        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
-          <option value="">Todos os tipos</option>
-          <option value="receber">A Receber</option>
-          <option value="pagar">A Pagar</option>
-          <option value="transferencia">Transferência</option>
-        </select>
-        <select value={filtroStatus2} onChange={e => setFiltroStatus2(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
-          <option value="">Todos os status</option>
-          <option value="pendente">Pendente</option>
-          <option value="pago">Pago</option>
-          <option value="cancelado">Cancelado</option>
-        </select>
-        <select value={filtroCategoria} onChange={e => setFiltroCategoria(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }}>
-          <option value="">Todas as categorias</option>
-          {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <input type="date" value={filtroDataIni} onChange={e => setFiltroDataIni(e.target.value)} title="Vencimento de"
-          style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
-        <input type="date" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)} title="Vencimento até"
-          style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, background: 'white', outline: 'none', cursor: 'pointer' }} />
-        {(busca || filtroTipo || filtroStatus2 || filtroCategoria || filtroDataIni || filtroDataFim) && (
-          <button onClick={() => { setBusca(''); setFiltroTipo(''); setFiltroStatus2(''); setFiltroCategoria(''); setFiltroDataIni(''); setFiltroDataFim('') }}
-            style={{ padding: '8px 14px', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 12, background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}>
-            Limpar filtros
-          </button>
-        )}
-      </div>
-
-      {/* Visão Geral */}
+      {/* ─── VISÃO GERAL ─── */}
       {tab === 'visao_geral' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20 }}>
-            <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 14, fontSize: 14 }}>Últimas Movimentações</div>
-            {transacoesFiltradas.slice(0, 8).map(t => (
-              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f8fafc' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{t.due_date ? format(parseISO(t.due_date), 'dd/MM/yyyy') : '—'}</div>
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.type === 'receber' ? '#10b981' : '#ef4444' }}>
-                    {t.type === 'receber' ? '+' : '-'}{fmt(t.amount)}
-                  </div>
-                  <Badge color={statusCores[t.status]}>{t.status}</Badge>
-                </div>
-              </div>
-            ))}
-            {transacoesFiltradas.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 24 }}>Nenhuma movimentação encontrada.</div>}
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 18 }}>
+            <StatCard label="Saldo em contas" value={fmt(saldoTotal)} icon="🏦" bg="#eff6ff" border="#bfdbfe" />
+            <StatCard label="A receber" value={fmt(soma(indR.abertos))} icon="📥" bg="#f0fdf4" border="#bbf7d0" />
+            <StatCard label="A pagar" value={fmt(soma(indP.abertos))} icon="📤" bg="#fef2f2" border="#fecaca" />
+            <StatCard label="Recebido no mês" value={fmt(soma(indR.pagosMes))} icon="📈" bg="#f0fdf4" border="#bbf7d0" />
+            <StatCard label="Pago no mês" value={fmt(soma(indP.pagosMes))} icon="📉" bg="#f8fafc" border="#e2e8f0" />
+            <StatCard label="Resultado do mês" value={fmt(soma(indR.pagosMes) - soma(indP.pagosMes))} icon="⚖️" bg="#fffbeb" border="#fde68a" />
           </div>
-
-          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20 }}>
-            <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 14, fontSize: 14 }}>Contas Bancárias</div>
-            {contas.map(c => (
-              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#f8fafc', borderRadius: 10, marginBottom: 8 }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏦</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            {listaResumo('receber', '📥 A receber · vencidos e próximos 7 dias', pendentesProximos(indR))}
+            {listaResumo('pagar', '📤 A pagar · vencidos e próximos 7 dias', pendentesProximos(indP))}
+            <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', padding: 18 }}>
+              <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 10, fontSize: 14 }}>🏦 Contas bancárias</div>
+              {contas.map(c => (
+                <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#f8fafc', borderRadius: 10, marginBottom: 8 }}>
                   <div>
                     <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.bank} · {c.type}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.bank}</div>
                   </div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: Number(c.balance) >= 0 ? '#059669' : '#dc2626' }}>{fmt(c.balance)}</div>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: Number(c.balance) >= 0 ? '#10b981' : '#ef4444' }}>{fmt(c.balance)}</div>
-              </div>
-            ))}
-            {contas.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 24 }}>Nenhuma conta cadastrada.</div>}
+              ))}
+              {contas.length === 0 && (
+                <div style={{ textAlign: 'center', color: '#94a3b8', padding: 16, fontSize: 13 }}>
+                  Nenhuma conta cadastrada.
+                  <div style={{ marginTop: 10 }}><Btn size="sm" onClick={() => setShowContaModal(true)}><Landmark size={13} /> Cadastrar conta</Btn></div>
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* ─── A RECEBER ─── */}
+      {tab === 'receber' && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 14 }}>
+            <StatCard label="Em aberto" value={fmt(soma(indR.abertos))} icon="⏳" bg="#eff6ff" border="#bfdbfe" />
+            <StatCard label={`Vencido (${indR.vencidos.length})`} value={fmt(soma(indR.vencidos))} icon="⚠️" bg="#fef2f2" border="#fecaca" />
+            <StatCard label="Vence em 7 dias" value={fmt(soma(indR.prox7))} icon="📅" bg="#fffbeb" border="#fde68a" />
+            <StatCard label="Recebido no mês" value={fmt(soma(indR.pagosMes))} icon="✅" bg="#f0fdf4" border="#bbf7d0" />
+            <StatCard label="Inadimplência" value={`${percInadimplencia}%`} icon="📊"
+              bg={percInadimplencia > 20 ? '#fef2f2' : percInadimplencia > 5 ? '#fffbeb' : '#f0fdf4'}
+              border={percInadimplencia > 20 ? '#fecaca' : percInadimplencia > 5 ? '#fde68a' : '#bbf7d0'} />
+          </div>
+          {barraFiltros('receber')}
+          {tabelaTitulos('receber')}
+        </div>
+      )}
+
+      {/* ─── A PAGAR ─── */}
+      {tab === 'pagar' && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
+            <StatCard label="Em aberto" value={fmt(soma(indP.abertos))} icon="⏳" bg="#fef2f2" border="#fecaca" />
+            <StatCard label={`Vencido (${indP.vencidos.length})`} value={fmt(soma(indP.vencidos))} icon="⚠️" bg="#fef2f2" border="#fecaca" />
+            <StatCard label="Vence em 7 dias" value={fmt(soma(indP.prox7))} icon="📅" bg="#fffbeb" border="#fde68a" />
+            <StatCard label="Pago no mês" value={fmt(soma(indP.pagosMes))} icon="✅" bg="#f8fafc" border="#e2e8f0" />
+          </div>
+          {barraFiltros('pagar')}
+          {tabelaTitulos('pagar')}
         </div>
       )}
 
@@ -549,75 +754,6 @@ export default function Financeiro() {
               <div style={{ marginTop: 14 }}><Btn onClick={() => setShowContaModal(true)}><Plus size={14} /> Adicionar Conta</Btn></div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Transações */}
-      {tab === 'transacoes' && (
-        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                {['Descrição', 'Tipo', 'Valor', 'Vencimento', 'Pgto', 'Status', 'Ações'].map(h => (
-                  <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Carregando...</td></tr>
-              ) : transacoes.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>💳</div>
-                  <div style={{ fontWeight: 600, color: '#475569' }}>Nenhuma movimentação registrada</div>
-                </td></tr>
-              ) : transacoesFiltradas.map(t => {
-                const atrasado = t.status === 'pendente' && t.due_date && new Date(t.due_date) < hoje
-                const pgtoAtrasado = t.data_pagamento && t.due_date && new Date(t.data_pagamento) > new Date(t.due_date)
-                return (
-                <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc', background: atrasado ? '#fffbeb' : 'white' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                  onMouseLeave={e => e.currentTarget.style.background = atrasado ? '#fffbeb' : 'white'}>
-                  <td style={{ padding: '12px 18px' }}>
-                    <div style={{ fontWeight: 600, color: '#1e293b' }}>{t.description}</div>
-                    {t.clients && <div style={{ fontSize: 11, color: '#94a3b8' }}>{t.clients.razao_social}</div>}
-                    {t.is_recurring && <div style={{ fontSize: 10, color: '#3b82f6', fontWeight: 600 }}>↻ Recorrente</div>}
-                  </td>
-                  <td style={{ padding: '12px 18px' }}><Badge color={tipoCores[t.type]}>{tipoLabel[t.type] || t.type}</Badge></td>
-                  <td style={{ padding: '12px 18px', fontWeight: 700, color: t.type === 'receber' ? '#10b981' : '#ef4444', fontFamily: 'monospace' }}>
-                    {t.type === 'receber' ? '+' : '-'}{fmt(t.amount)}
-                  </td>
-                  <td style={{ padding: '12px 18px', color: atrasado ? '#f59e0b' : '#64748b', fontSize: 12, fontWeight: atrasado ? 700 : 400 }}>
-                    {t.due_date ? format(parseISO(t.due_date), 'dd/MM/yyyy') : '—'}
-                    {atrasado && <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>VENCIDO</div>}
-                  </td>
-                  <td style={{ padding: '12px 18px', fontSize: 12 }}>
-                    {t.data_pagamento ? (
-                      <span style={{ color: pgtoAtrasado ? '#f59e0b' : '#10b981', fontWeight: 600 }}>
-                        {format(parseISO(t.data_pagamento), 'dd/MM/yyyy')}
-                        {pgtoAtrasado && <div style={{ fontSize: 10, color: '#f59e0b' }}>Em atraso</div>}
-                      </span>
-                    ) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                  </td>
-                  <td style={{ padding: '12px 18px' }}><Badge color={statusCores[t.status]}>{t.status}</Badge></td>
-                  <td style={{ padding: '12px 18px' }}>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {t.status === 'pendente' && (
-                        <>
-                          <Btn size="sm" variant="success" onClick={() => setPagamentoModal({ id: t.id, status: 'pago', data_pagamento: new Date().toISOString().slice(0,10), tipo: t.type, amount: t.amount, due_date: t.due_date, bank_account_id: contas[0]?.id || '' })}>✓ {t.type === 'receber' ? 'Recebido' : 'Pago'}</Btn>
-                          <Btn size="sm" variant="danger" onClick={() => alterarStatus(t.id, 'cancelado')}>✕</Btn>
-                        </>
-                      )}
-                      <button onClick={() => abrirEdicao(t)} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 7, padding: '4px 8px', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                        <Pencil size={11} /> Editar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                )
-              })}
-            </tbody>
-          </table>
         </div>
       )}
 
@@ -818,87 +954,117 @@ export default function Financeiro() {
         </form>
       </Modal>
 
-      {/* Modal Transação */}
-      <Modal open={showModal} onClose={() => { setShowModal(false); setEditandoId(null) }} title={editandoId ? 'Editar Movimentação' : 'Nova Movimentação'} size="lg">
-        <form onSubmit={salvarTransacao}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select label="Tipo *" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-              <option value="receber">A Receber (entrada)</option>
-              <option value="pagar">A Pagar (saída)</option>
-              <option value="transferencia">Transferência</option>
-            </Select>
-            <Input label="Valor (R$) *" type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0,00" required />
-          </div>
-          <Input label="Descrição *" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Ex: Honorários - Janeiro" required />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Input label="Vencimento" type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
-            <Input label="Data Pagamento" type="date" value={form.data_pagamento} onChange={e => setForm(f => ({ ...f, data_pagamento: e.target.value }))} />
-            <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-              <option value="pendente">Pendente</option>
-              <option value="pago">Pago/Recebido</option>
-              <option value="cancelado">Cancelado</option>
-            </Select>
-          </div>
-          <Select label="Cliente (opcional)" value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
-            <option value="">Sem cliente vinculado</option>
-            {clientes.map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
-          </Select>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select label="Categoria (Tag)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-              <option value="">Sem categoria</option>
-              {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
-            </Select>
-            <Select label="Conta bancária" value={form.bank_account_id || ''} onChange={e => setForm(f => ({ ...f, bank_account_id: e.target.value }))}>
-              <option value="">Sem conta vinculada</option>
-              {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
-            </Select>
-          </div>
-          <Textarea label="Observações" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', marginTop: 4 }}>
-            <input type="checkbox" id="is_recurring" checked={form.is_recurring} onChange={e => setForm(f => ({ ...f, is_recurring: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#3b82f6' }} />
-            <label htmlFor="is_recurring" style={{ fontSize: 13, color: '#374151', cursor: 'pointer', fontWeight: 500 }}>
-              Honorário recorrente — gerar automaticamente todo dia 01
-            </label>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-            <Btn variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Btn>
-            <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : editandoId ? 'Salvar Alterações' : 'Salvar Movimentação'}</Btn>
-          </div>
-        </form>
+      {/* ─── Modal: novo / editar título ─── */}
+      <Modal open={!!tituloModal} onClose={() => setTituloModal(null)} size="lg"
+        title={tituloModal ? `${tituloModal.id ? 'Editar' : 'Novo'} título ${tituloModal.tipo === 'receber' ? 'a receber' : 'a pagar'}` : ''}>
+        {tituloModal && (() => {
+          const { tipo, form: f, id, pago } = tituloModal
+          return (
+            <form onSubmit={salvarTitulo}>
+              {tipo === 'receber' && (
+                <Select label="Cliente" value={f.client_id} onChange={e => setTF('client_id', e.target.value)}>
+                  <option value="">Sem cliente vinculado</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
+                </Select>
+              )}
+              <Input label={tipo === 'receber' ? 'Descrição *' : 'Descrição / Favorecido *'} value={f.description} onChange={e => setTF('description', e.target.value)}
+                placeholder={tipo === 'receber' ? 'Ex: Honorários outubro/2026' : 'Ex: Aluguel da sala — Imobiliária X'} required />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                <Input label="Valor (R$) *" type="number" step="0.01" min="0.01" value={f.amount} onChange={e => setTF('amount', e.target.value)} required disabled={pago} />
+                <Input label="Vencimento *" type="date" value={f.due_date} onChange={e => setTF('due_date', e.target.value)} required />
+                <Select label="Categoria" value={f.category} onChange={e => setTF('category', e.target.value)}>
+                  <option value="">Sem categoria</option>
+                  {CATS[tipo].map(c => <option key={c} value={c}>{c}</option>)}
+                  {f.category && !CATS[tipo].includes(f.category) && <option value={f.category}>{f.category}</option>}
+                </Select>
+              </div>
+              {pago && <div style={{ fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 10px', marginTop: -4, marginBottom: 12 }}>Este título já foi baixado. Para alterar o valor, estorne a baixa primeiro.</div>}
+              <Textarea label="Observações" value={f.notes} onChange={e => setTF('notes', e.target.value)} rows={2} />
+
+              {!id && (
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', padding: '4px 0 10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={f.is_recurring} onChange={e => setTF('is_recurring', e.target.checked)} style={{ width: 16, height: 16, accentColor: '#3b82f6' }} />
+                    Recorrente (gera automaticamente todo mês)
+                  </label>
+                  {!f.is_recurring && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151' }}>
+                      Repetir em
+                      <input type="number" min="1" max="60" value={f.parcelas} onChange={e => setTF('parcelas', e.target.value)} style={{ ...inputBase, width: 64, padding: '6px 8px' }} />
+                      parcela(s) mensais
+                    </label>
+                  )}
+                </div>
+              )}
+              {id && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', cursor: 'pointer', paddingBottom: 10 }}>
+                  <input type="checkbox" checked={f.is_recurring} onChange={e => setTF('is_recurring', e.target.checked)} style={{ width: 16, height: 16, accentColor: '#3b82f6' }} />
+                  Recorrente (gera automaticamente todo mês)
+                </label>
+              )}
+
+              {!id && tipo === 'pagar' && Number(f.parcelas) <= 1 && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', marginBottom: 6 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#1e293b', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={f.pagoAgora} onChange={e => setTF('pagoAgora', e.target.checked)} style={{ width: 16, height: 16, accentColor: '#10b981' }} />
+                    Já foi pago — dar baixa agora
+                  </label>
+                  {f.pagoAgora && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
+                      <Input label="Data do pagamento *" type="date" value={f.data_pagamento} onChange={e => setTF('data_pagamento', e.target.value)} required />
+                      <Select label="Conta / Banco *" value={f.bank_account_id} onChange={e => setTF('bank_account_id', e.target.value)} required>
+                        <option value="">Selecione</option>
+                        {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!id && tipo === 'receber' && (
+                <div style={{ fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '8px 12px' }}>
+                  💡 O título entra como <b>em aberto</b>. Quando o cliente pagar, use <b>✓ Baixar</b> para informar a data e o banco.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+                <Btn variant="secondary" onClick={() => setTituloModal(null)}>Cancelar</Btn>
+                <Btn type="submit" disabled={saving}>{saving ? 'Salvando...' : id ? 'Salvar alterações' : Number(f.parcelas) > 1 && !f.is_recurring ? `Lançar ${f.parcelas} títulos` : 'Lançar título'}</Btn>
+              </div>
+            </form>
+          )
+        })()}
       </Modal>
 
-      {/* Modal Confirmar Pagamento */}
-      <Modal open={!!pagamentoModal} onClose={() => setPagamentoModal(null)} title={pagamentoModal?.tipo === 'receber' ? 'Confirmar Recebimento' : 'Confirmar Pagamento'}>
-        {pagamentoModal && (
-          <form onSubmit={confirmarPagamento}>
-            <Input
-              label="Data do pagamento *"
-              type="date"
-              value={pagamentoModal.data_pagamento}
-              onChange={e => setPagamentoModal(p => ({ ...p, data_pagamento: e.target.value }))}
-              required
-            />
-            {pagamentoModal.data_pagamento && pagamentoModal.due_date && new Date(pagamentoModal.data_pagamento) > new Date(pagamentoModal.due_date) && (
-              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#92400e', marginTop: 4 }}>
-                ⚠️ Pagamento após o vencimento — será marcado como pago em atraso.
+      {/* ─── Modal: baixa ─── */}
+      <Modal open={!!baixa} onClose={() => setBaixa(null)} title={baixa?.t.type === 'receber' ? 'Baixar recebimento' : 'Baixar pagamento'}>
+        {baixa && (
+          <form onSubmit={confirmarBaixa}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+              {baixa.t.clients && <div style={{ fontWeight: 700, color: '#1e293b' }}>{baixa.t.clients.razao_social}</div>}
+              <div style={{ fontSize: 13, color: '#475569' }}>{baixa.t.description}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 13 }}>
+                <span style={{ color: '#64748b' }}>Vencimento: <b>{fmtData(baixa.t.due_date)}</b></span>
+                <span style={{ fontWeight: 900, color: baixa.t.type === 'receber' ? '#059669' : '#dc2626' }}>{fmt(baixa.t.amount)}</span>
+              </div>
+            </div>
+            <Input label={`Data do ${baixa.t.type === 'receber' ? 'recebimento' : 'pagamento'} *`} type="date" value={baixa.data_pagamento}
+              onChange={e => setBaixa(b => ({ ...b, data_pagamento: e.target.value }))} required />
+            {baixa.t.due_date && baixa.data_pagamento > baixa.t.due_date && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#92400e', marginTop: -6, marginBottom: 12 }}>
+                ⚠️ Data posterior ao vencimento — ficará registrado como pago com atraso.
               </div>
             )}
-            <Select
-              label="Conta bancária *"
-              value={pagamentoModal.bank_account_id}
-              onChange={e => setPagamentoModal(p => ({ ...p, bank_account_id: e.target.value }))}
-              required
-            >
+            <Select label="Banco / Conta *" value={baixa.bank_account_id} onChange={e => setBaixa(b => ({ ...b, bank_account_id: e.target.value }))} required>
               <option value="">Selecione a conta</option>
               {contas.map(c => <option key={c.id} value={c.id}>{c.name} — {c.bank}</option>)}
             </Select>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#475569', marginTop: 2 }}>
-              {pagamentoModal.tipo === 'receber' ? '📈 Saldo da conta será aumentado em ' : '📉 Saldo da conta será reduzido em '}
-              <strong>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pagamentoModal.amount)}</strong>
+            {contas.length === 0 && <div style={{ fontSize: 12, color: '#dc2626', marginTop: -6, marginBottom: 10 }}>Cadastre uma conta bancária na aba "Contas" primeiro.</div>}
+            <div style={{ fontSize: 12, color: '#475569' }}>
+              {baixa.t.type === 'receber' ? '📈 O saldo da conta será aumentado em ' : '📉 O saldo da conta será reduzido em '}<b>{fmt(baixa.t.amount)}</b>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-              <Btn variant="secondary" onClick={() => setPagamentoModal(null)}>Cancelar</Btn>
-              <Btn type="submit">{pagamentoModal?.tipo === 'receber' ? '✓ Confirmar Recebimento' : '✓ Confirmar Pagamento'}</Btn>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <Btn variant="secondary" onClick={() => setBaixa(null)}>Cancelar</Btn>
+              <Btn type="submit" variant="success" disabled={saving}>{saving ? 'Salvando...' : '✓ Confirmar baixa'}</Btn>
             </div>
           </form>
         )}
@@ -1011,4 +1177,9 @@ export default function Financeiro() {
       </Modal>
     </div>
   )
+}
+
+const miniBtn = {
+  background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 8px', cursor: 'pointer',
+  color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600,
 }
