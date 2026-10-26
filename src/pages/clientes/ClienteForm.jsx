@@ -9,7 +9,7 @@ const emptyForm = {
   cnpj: '', razao_social: '', nome_fantasia: '', inscricao_municipal: '',
   inscricao_estadual: '', tributacao: '', data_entrada: '', aberto_pelo_escritorio: '',
   status: 'ativo', email: '', telefone: '', endereco: '', portal_credentials: [],
-  setores_responsaveis: {}, honorario_valor: '', honorario_dia: '5',
+  setores_responsaveis: {}, honorario_valor: '', honorario_dia: '5', comissionador_id: '',
   data_saida: '', motivo_saida: '',
 }
 
@@ -29,6 +29,7 @@ export default function ClienteForm() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [usuarios, setUsuarios] = useState([])
+  const [comissionadores, setComissionadores] = useState([])
   const [cnpjLoading, setCnpjLoading] = useState(false)
   const [cnpjMsg, setCnpjMsg] = useState('')
 
@@ -40,6 +41,8 @@ export default function ClienteForm() {
   async function fetchUsuarios() {
     const { data } = await supabase.from('users').select('id, name').order('name')
     setUsuarios(data || [])
+    const { data: com } = await supabase.from('comissionadores').select('id, nome, percentual').eq('ativo', true).order('nome')
+    setComissionadores(com || [])
   }
 
   async function fetchCliente() {
@@ -52,6 +55,7 @@ export default function ClienteForm() {
       setores_responsaveis: data.setores_responsaveis || {},
       honorario_valor: data.honorario_valor || '',
       honorario_dia: data.honorario_dia || '5',
+      comissionador_id: data.comissionador_id || '',
       data_saida: data.data_saida || '',
       motivo_saida: data.motivo_saida || '',
     })
@@ -117,6 +121,7 @@ export default function ClienteForm() {
       setores_responsaveis: form.setores_responsaveis,
       honorario_valor: form.honorario_valor ? Number(form.honorario_valor) : null,
       honorario_dia: form.honorario_dia ? Number(form.honorario_dia) : 5,
+      comissionador_id: form.comissionador_id || null,
     }
 
     if (isEdit) {
@@ -234,6 +239,10 @@ export default function ClienteForm() {
             <Input label="Valor do Honorário (R$)" type="number" step="0.01" min="0" value={form.honorario_valor} onChange={e => set('honorario_valor', e.target.value)} placeholder="0,00" />
             <Input label="Dia de vencimento (1-28)" type="number" min="1" max="28" value={form.honorario_dia} onChange={e => set('honorario_dia', e.target.value)} placeholder="5" />
           </div>
+          <Select label="Comissionador (quem indicou)" value={form.comissionador_id || ''} onChange={e => set('comissionador_id', e.target.value)}>
+            <option value="">Sem comissão</option>
+            {comissionadores.map(c => <option key={c.id} value={c.id}>{c.nome} ({Number(c.percentual)}% da 1ª parcela)</option>)}
+          </Select>
         </Section>
 
         {/* Setores Responsáveis */}
