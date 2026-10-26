@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, Users, Wallet, ClipboardList, Scale, UserCog,
-  ChevronLeft, ChevronRight, LogOut, Building2, Inbox, BarChart2
+  ChevronLeft, ChevronRight, ChevronDown, LogOut, Inbox, BarChart2,
+  Target, Briefcase, HardHat, FolderOpen
 } from 'lucide-react'
 
 const G = '#C9960A'   // dourado Aggio
@@ -13,10 +14,18 @@ const DARK2 = '#111318'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  {
+    key: 'comercial', label: 'Comercial', icon: Target,
+    children: [
+      { path: '/comercial/servicos', label: 'Funil · Serviços', icon: Briefcase },
+      { path: '/comercial/obras', label: 'Funil · Obras (INSS)', icon: HardHat },
+    ],
+  },
   { path: '/clientes', label: 'Clientes', icon: Users },
   { path: '/financeiro', label: 'Financeiro', icon: Wallet },
   { path: '/obrigacoes', label: 'Obrigações', icon: ClipboardList },
   { path: '/solicitacoes', label: 'Solicitações', icon: Inbox },
+  { path: '/documentos', label: 'Documentos', icon: FolderOpen },
   { path: '/legalizacao', label: 'Legalização', icon: Scale },
   { path: '/relatorios', label: 'Relatórios', icon: BarChart2 },
 ]
@@ -29,6 +38,7 @@ export default function Layout({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
+  const [gruposAbertos, setGruposAbertos] = useState({ comercial: true })
 
   const allNavItems = [
     ...navItems,
@@ -36,6 +46,62 @@ export default function Layout({ children }) {
   ]
 
   const isActive = (path) => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
+  const leafItems = allNavItems.flatMap(i => i.children ? i.children : [i])
+
+  function renderLink(item, nested = false) {
+    const Icon = item.icon
+    const active = isActive(item.path)
+    return (
+      <Link
+        key={item.path}
+        to={item.path}
+        title={collapsed ? item.label : undefined}
+        style={{
+          display: 'flex', alignItems: 'center',
+          gap: 10, padding: collapsed ? '10px 14px' : (nested ? '8px 12px 8px 30px' : '10px 12px'),
+          borderRadius: 10, marginBottom: 2,
+          background: active ? `rgba(201,150,10,0.12)` : 'transparent',
+          color: active ? G2 : 'rgba(255,255,255,0.45)',
+          textDecoration: 'none', fontWeight: active ? 700 : 400,
+          fontSize: nested ? 13 : 13.5, transition: 'all 0.15s',
+          borderLeft: active ? `3px solid ${G}` : '3px solid transparent',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          whiteSpace: 'nowrap',
+        }}
+        onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.75)' } }}
+        onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)' } }}
+      >
+        <Icon size={nested ? 15 : 17} style={{ flexShrink: 0 }} />
+        {!collapsed && <span>{item.label}</span>}
+      </Link>
+    )
+  }
+
+  function renderGroup(group) {
+    const Icon = group.icon
+    const algumAtivo = group.children.some(c => isActive(c.path))
+    const aberto = gruposAbertos[group.key] || algumAtivo
+    if (collapsed) return <div key={group.key}>{group.children.map(c => renderLink(c))}</div>
+    return (
+      <div key={group.key} style={{ marginBottom: 2 }}>
+        <button
+          onClick={() => setGruposAbertos(g => ({ ...g, [group.key]: !aberto }))}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+            padding: '10px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            background: 'transparent', borderLeft: '3px solid transparent',
+            color: algumAtivo ? G2 : 'rgba(255,255,255,0.45)', fontWeight: algumAtivo ? 700 : 400,
+            fontSize: 13.5, textAlign: 'left', whiteSpace: 'nowrap',
+          }}
+        >
+          <Icon size={17} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{group.label}</span>
+          <ChevronDown size={14} style={{ transform: aberto ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
+        </button>
+        {aberto && group.children.map(c => renderLink(c, true))}
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f1f5f9' }}>
@@ -104,34 +170,7 @@ export default function Layout({ children }) {
               Menu
             </div>
           )}
-          {allNavItems.map(item => {
-            const Icon = item.icon
-            const active = isActive(item.path)
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                title={collapsed ? item.label : undefined}
-                style={{
-                  display: 'flex', alignItems: 'center',
-                  gap: 10, padding: collapsed ? '10px 14px' : '10px 12px',
-                  borderRadius: 10, marginBottom: 2,
-                  background: active ? `rgba(201,150,10,0.12)` : 'transparent',
-                  color: active ? G2 : 'rgba(255,255,255,0.45)',
-                  textDecoration: 'none', fontWeight: active ? 700 : 400,
-                  fontSize: 13.5, transition: 'all 0.15s',
-                  borderLeft: active ? `3px solid ${G}` : '3px solid transparent',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.75)' } }}
-                onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)' } }}
-              >
-                <Icon size={17} style={{ flexShrink: 0 }} />
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            )
-          })}
+          {allNavItems.map(item => item.children ? renderGroup(item) : renderLink(item))}
         </nav>
 
         {/* User */}
@@ -188,7 +227,7 @@ export default function Layout({ children }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 3, height: 18, borderRadius: 2, background: G, marginRight: 4 }} />
             <span style={{ color: '#1e293b', fontSize: 14, fontWeight: 700 }}>
-              {allNavItems.find(n => isActive(n.path))?.label || 'Dashboard'}
+              {leafItems.find(n => n.path !== '/' && isActive(n.path))?.label || 'Dashboard'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
