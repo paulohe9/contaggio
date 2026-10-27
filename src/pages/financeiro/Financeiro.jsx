@@ -8,6 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { hojeISO, isoDe, addMesesISO, fmtData, fmtBRL, inputBase } from '../../lib/util'
 import EmitirNfse from './EmitirNfse'
 import NotasFiscais from './NotasFiscais'
+import LancamentoLote from './LancamentoLote'
 
 const PARCEIROS = ['rayssa', 'paulo', 'rilary']
 const PARCEIRO_COR = { rayssa: '#8b5cf6', paulo: '#3b82f6', rilary: '#f59e0b' }
@@ -54,6 +55,7 @@ export default function Financeiro() {
   const [baixa, setBaixa] = useState(null)              // { t, data_pagamento, bank_account_id }
   const [nfseTitulo, setNfseTitulo] = useState(null)    // título a receber em emissão de NFS-e
   const [notasPorTitulo, setNotasPorTitulo] = useState({})
+  const [loteAberto, setLoteAberto] = useState(false)
   // Reserva
   const [reservaMovements, setReservaMovements] = useState([])
   const [showReservaModal, setShowReservaModal] = useState(false)
@@ -674,6 +676,7 @@ export default function Financeiro() {
             {tab === 'receber' && <>
               <Btn variant="secondary" onClick={() => exportarCSV('receber')}>⬇ Exportar CSV</Btn>
               <Btn variant="secondary" onClick={() => setShowImportModal(true)}>⬆ Importar Asaas</Btn>
+              <Btn variant="secondary" onClick={() => setLoteAberto(true)}>📥 Lançar em lote</Btn>
               <Btn onClick={() => novoTitulo('receber')}><Plus size={14} /> Novo título a receber</Btn>
             </>}
             {tab === 'pagar' && <>
@@ -1065,6 +1068,9 @@ export default function Financeiro() {
           )
         })()}
       </Modal>
+
+      <LancamentoLote open={loteAberto} categorias={CAT_RECEBER} onClose={() => setLoteAberto(false)}
+        onLancado={(qtd, total) => { setLoteAberto(false); fetchTudo(); alert(`✅ ${qtd} título(s) lançado(s) no A Receber, somando ${fmtBRL(total)}.`) }} />
 
       <EmitirNfse open={!!nfseTitulo} titulo={nfseTitulo} onClose={() => setNfseTitulo(null)} onEmitida={() => carregarNotas()} />
 
