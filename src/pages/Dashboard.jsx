@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase'
 import { format, isToday, isTomorrow, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isPast } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useAuth } from '../contexts/AuthContext'
-import { Modal, Btn } from '../components/ui'
+import { Btn } from '../components/ui'
+import WhatsAppCentral from '../components/WhatsAppCentral'
 import { ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2, Users, TrendingDown, TrendingUp, ClipboardList, Plus, Pencil, Trash2, X, Check } from 'lucide-react'
 
 const G = '#C9960A'
@@ -423,37 +424,13 @@ function Field({ label, children }) {
   )
 }
 
-// Botão para ver/enviar agora o resumo diário que vai pro WhatsApp
+// Botão que abre a Central do WhatsApp (resumo do dia para o grupo, áudio e comandos)
 function ResumoWhatsApp() {
   const [aberto, setAberto] = useState(false)
-  const [texto, setTexto] = useState('')
-  const [status, setStatus] = useState('')
-
-  async function abrir() {
-    setAberto(true); setTexto(''); setStatus('Gerando resumo...')
-    const { data, error } = await supabase.functions.invoke('alertas-whatsapp', { body: { preview: true } })
-    if (error || !data?.ok) { setStatus('Não foi possível gerar o resumo. A função "alertas-whatsapp" já foi publicada no Supabase?'); return }
-    setTexto(data.texto); setStatus('')
-  }
-  async function enviar() {
-    setStatus('Enviando...')
-    const { data, error } = await supabase.functions.invoke('alertas-whatsapp', { body: { sempre: true } })
-    if (error || !data?.ok) { setStatus('Falhou: ' + (data?.error || error?.message || 'erro desconhecido') + '. Confira os secrets do WhatsApp no Supabase.'); return }
-    setStatus('✅ Enviado para o WhatsApp!')
-  }
-
   return (
     <>
-      <Btn variant="secondary" onClick={abrir}>📲 Resumo do dia</Btn>
-      <Modal open={aberto} onClose={() => setAberto(false)} title="Resumo diário (WhatsApp)">
-        {texto && <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: 14, margin: 0, color: '#1e293b' }}>{texto}</pre>}
-        {status && <div style={{ fontSize: 13, color: '#475569', marginTop: 10 }}>{status}</div>}
-        <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 10 }}>Esse resumo chega sozinho no WhatsApp de segunda a sábado às 7h.</div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-          <Btn variant="secondary" onClick={() => setAberto(false)}>Fechar</Btn>
-          {texto && <Btn variant="success" onClick={enviar}>Enviar agora</Btn>}
-        </div>
-      </Modal>
+      <Btn variant="secondary" onClick={() => setAberto(true)}>📲 Resumo do dia</Btn>
+      <WhatsAppCentral open={aberto} onClose={() => setAberto(false)} />
     </>
   )
 }
