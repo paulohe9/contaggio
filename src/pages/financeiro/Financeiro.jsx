@@ -6,6 +6,8 @@ import { PageHeader, Btn, Badge, Modal, Input, Select, Textarea, StatCard, TabBa
 import { Plus, Landmark, PiggyBank, TrendingUp, Pencil, Undo2, Trash2 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { hojeISO, isoDe, addMesesISO, fmtData, fmtBRL, inputBase } from '../../lib/util'
+import EmitirNfse from './EmitirNfse'
+import NotasFiscais from './NotasFiscais'
 
 const PARCEIROS = ['rayssa', 'paulo', 'rilary']
 const PARCEIRO_COR = { rayssa: '#8b5cf6', paulo: '#3b82f6', rilary: '#f59e0b' }
@@ -50,6 +52,8 @@ export default function Financeiro() {
   const [filtros, setFiltros] = useState({ receber: { ...filtroInicial }, pagar: { ...filtroInicial } })
   const [tituloModal, setTituloModal] = useState(null) // { id?, tipo, pago?, form }
   const [baixa, setBaixa] = useState(null)              // { t, data_pagamento, bank_account_id }
+  const [nfseTitulo, setNfseTitulo] = useState(null)    // título a receber em emissão de NFS-e
+  const [notasPorTitulo, setNotasPorTitulo] = useState({})
   // Reserva
   const [reservaMovements, setReservaMovements] = useState([])
   const [showReservaModal, setShowReservaModal] = useState(false)
@@ -76,6 +80,17 @@ export default function Financeiro() {
     setReservaMovements(rRes.data || [])
     setDistributions(dRes.data || [])
     setLoading(false)
+    carregarNotas()
+  }
+
+  async function carregarNotas() {
+    const { data } = await supabase.from('nfse_notas').select('transaction_id, numero_nfse, status, ambiente').not('transaction_id', 'is', null)
+    const mapa = {}
+    for (const n of data || []) {
+      const atual = mapa[n.transaction_id]
+      if (!atual || n.status === 'autorizada') mapa[n.transaction_id] = n
+    }
+    setNotasPorTitulo(mapa)
   }
 
   const fmt = fmtBRL
@@ -441,6 +456,7 @@ export default function Financeiro() {
     { key: 'visao_geral', label: 'Visão Geral', icon: '📊' },
     { key: 'receber', label: `A Receber (${indR.abertos.length})`, icon: '📥' },
     { key: 'pagar', label: `A Pagar (${indP.abertos.length})`, icon: '📤' },
+    { key: 'notas', label: 'Notas fiscais', icon: '🧾' },
     { key: 'contas', label: `Contas (${contas.length})`, icon: '🏦' },
     { key: 'reserva', label: 'Reserva', icon: '🐷' },
     { key: 'distribuicao', label: 'Distribuição', icon: '💰' },
@@ -568,7 +584,14 @@ export default function Financeiro() {
                     <td style={{ padding: '11px 16px', fontSize: 12, color: '#64748b' }}>{t.category || '—'}</td>
                     <td style={{ padding: '11px 16px', fontSize: 12, color: sit === 'vencido' ? '#dc2626' : '#475569', fontWeight: sit === 'vencido' ? 700 : 400, whiteSpace: 'nowrap' }}>{fmtData(t.due_date)}</td>
                     <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 800, color: sit === 'cancelado' ? '#94a3b8' : cor, fontFamily: 'monospace', whiteSpace: 'nowrap', textDecoration: sit === 'cancelado' ? 'line-through' : 'none' }}>{fmt(t.amount)}</td>
-                    <td style={{ padding: '11px 16px' }}>{situacaoCell(t)}</td>
+                    <td style={{ padding: '11px 16px' }}>
+                      {situacaoCell(t)}
+                      {tipo === 'receber' && notasPorTitulo[t.id] && (
+                        <div style={{ fontSize: 10.5, marginTop: 3, fontWeight: 700, color: notasPorTitulo[t.id].status === 'autorizada' ? '#059669' : '#b45309' }}>
+                          🧾 {notasPorTitulo[t.id].status === 'autorizada' ? `NFS-e nº ${notasPorTitulo[t.id].numero_nfse}${notasPorTitulo[t.id].ambiente !== 'producao' ? ' (teste)' : ''}` : `NFS-e ${notasPorTitulo[t.id].status.replace('_', ' ')}`}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         {(sit === 'aberto' || sit === 'vencido') && (
@@ -576,6 +599,9 @@ export default function Financeiro() {
                         )}
                         {sit === 'pago' && (
                           <button title="Estornar baixa" onClick={() => estornar(t)} style={miniBtn}><Undo2 size={12} /> Estornar</button>
+                        )}
+                        {tipo === 'receber' && sit !== 'cancelado' && notasPorTitulo[t.id]?.status !== 'autorizada' && (
+                          <button title="Emitir NFS-e" onClick={() => setNfseTitulo(t)} style={{ ...miniBtn, color: '#7c3aed', borderColor: '#ddd6fe', background: '#f5f3ff' }}>🧾 NFS-e</button>
                         )}
                         <button title="Editar" onClick={() => editarTitulo(t)} style={miniBtn}><Pencil size={12} /></button>
                         {(sit === 'aberto' || sit === 'vencido') && (
@@ -715,6 +741,9 @@ export default function Financeiro() {
           {tabelaTitulos('receber')}
         </div>
       )}
+
+      {/* ─── NOTAS FISCAIS ─── */}
+      {tab === 'notas' && <NotasFiscais />}
 
       {/* ─── A PAGAR ─── */}
       {tab === 'pagar' && (
@@ -1036,6 +1065,8 @@ export default function Financeiro() {
           )
         })()}
       </Modal>
+
+      <EmitirNfse open={!!nfseTitulo} titulo={nfseTitulo} onClose={() => setNfseTitulo(null)} onEmitida={() => carregarNotas()} />
 
       {/* ─── Modal: baixa ─── */}
       <Modal open={!!baixa} onClose={() => setBaixa(null)} title={baixa?.t.type === 'receber' ? 'Baixar recebimento' : 'Baixar pagamento'}>
