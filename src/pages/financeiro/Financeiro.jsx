@@ -9,6 +9,7 @@ import { hojeISO, isoDe, addMesesISO, fmtData, fmtBRL, inputBase } from '../../l
 import EmitirNfse from './EmitirNfse'
 import NotasFiscais from './NotasFiscais'
 import LancamentoLote from './LancamentoLote'
+import { CobrarModal, ReguaConfig } from './Cobranca'
 
 const PARCEIROS = ['rayssa', 'paulo', 'rilary']
 const PARCEIRO_COR = { rayssa: '#8b5cf6', paulo: '#3b82f6', rilary: '#f59e0b' }
@@ -56,6 +57,9 @@ export default function Financeiro() {
   const [nfseTitulo, setNfseTitulo] = useState(null)    // título a receber em emissão de NFS-e
   const [notasPorTitulo, setNotasPorTitulo] = useState({})
   const [loteAberto, setLoteAberto] = useState(false)
+  const [cobrar, setCobrar] = useState(null)            // títulos a cobrar pelo WhatsApp
+  const [reguaAberta, setReguaAberta] = useState(false)
+  const [ultimaCobranca, setUltimaCobranca] = useState({})
   // Reserva
   const [reservaMovements, setReservaMovements] = useState([])
   const [showReservaModal, setShowReservaModal] = useState(false)
@@ -93,6 +97,10 @@ export default function Financeiro() {
       if (!atual || n.status === 'autorizada') mapa[n.transaction_id] = n
     }
     setNotasPorTitulo(mapa)
+    const { data: cobs } = await supabase.from('cobrancas').select('transaction_id, created_at').eq('status', 'enviada').order('created_at', { ascending: false }).limit(1000)
+    const ult = {}
+    for (const c of cobs || []) if (c.transaction_id && !ult[c.transaction_id]) ult[c.transaction_id] = c.created_at
+    setUltimaCobranca(ult)
   }
 
   const fmt = fmtBRL
@@ -588,6 +596,9 @@ export default function Financeiro() {
                     <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 800, color: sit === 'cancelado' ? '#94a3b8' : cor, fontFamily: 'monospace', whiteSpace: 'nowrap', textDecoration: sit === 'cancelado' ? 'line-through' : 'none' }}>{fmt(t.amount)}</td>
                     <td style={{ padding: '11px 16px' }}>
                       {situacaoCell(t)}
+                      {tipo === 'receber' && ultimaCobranca[t.id] && (sit === 'aberto' || sit === 'vencido') && (
+                        <div style={{ fontSize: 10.5, marginTop: 3, color: '#16a34a', fontWeight: 600 }}>💬 cobrado em {new Date(ultimaCobranca[t.id]).toLocaleDateString('pt-BR')}</div>
+                      )}
                       {tipo === 'receber' && notasPorTitulo[t.id] && (
                         <div style={{ fontSize: 10.5, marginTop: 3, fontWeight: 700, color: notasPorTitulo[t.id].status === 'autorizada' ? '#059669' : '#b45309' }}>
                           🧾 {notasPorTitulo[t.id].status === 'autorizada' ? `NFS-e nº ${notasPorTitulo[t.id].numero_nfse}${notasPorTitulo[t.id].ambiente !== 'producao' ? ' (teste)' : ''}` : `NFS-e ${notasPorTitulo[t.id].status.replace('_', ' ')}`}
@@ -601,6 +612,9 @@ export default function Financeiro() {
                         )}
                         {sit === 'pago' && (
                           <button title="Estornar baixa" onClick={() => estornar(t)} style={miniBtn}><Undo2 size={12} /> Estornar</button>
+                        )}
+                        {tipo === 'receber' && (sit === 'aberto' || sit === 'vencido') && (
+                          <button title="Cobrar pelo WhatsApp" onClick={() => setCobrar([t])} style={{ ...miniBtn, color: '#16a34a', borderColor: '#bbf7d0', background: '#f0fdf4' }}>💬</button>
                         )}
                         {tipo === 'receber' && sit !== 'cancelado' && notasPorTitulo[t.id]?.status !== 'autorizada' && (
                           <button title="Emitir NFS-e" onClick={() => setNfseTitulo(t)} style={{ ...miniBtn, color: '#7c3aed', borderColor: '#ddd6fe', background: '#f5f3ff' }}>🧾 NFS-e</button>
@@ -677,6 +691,8 @@ export default function Financeiro() {
               <Btn variant="secondary" onClick={() => exportarCSV('receber')}>⬇ Exportar CSV</Btn>
               <Btn variant="secondary" onClick={() => setShowImportModal(true)}>⬆ Importar Asaas</Btn>
               <Btn variant="secondary" onClick={() => setLoteAberto(true)}>📥 Lançar em lote</Btn>
+              <Btn variant="secondary" onClick={() => indR.vencidos.length ? setCobrar(indR.vencidos) : alert('Nenhum título vencido para cobrar.')}>💬 Cobrar vencidos ({indR.vencidos.length})</Btn>
+              <Btn variant="ghost" onClick={() => setReguaAberta(true)}>⚙ Régua de cobrança</Btn>
               <Btn onClick={() => novoTitulo('receber')}><Plus size={14} /> Novo título a receber</Btn>
             </>}
             {tab === 'pagar' && <>
@@ -1068,6 +1084,9 @@ export default function Financeiro() {
           )
         })()}
       </Modal>
+
+      <CobrarModal open={!!cobrar} titulos={cobrar} onClose={() => setCobrar(null)} onEnviado={() => carregarNotas()} />
+      <ReguaConfig open={reguaAberta} onClose={() => setReguaAberta(false)} />
 
       <LancamentoLote open={loteAberto} categorias={CAT_RECEBER} onClose={() => setLoteAberto(false)}
         onLancado={(qtd, total) => { setLoteAberto(false); fetchTudo(); alert(`✅ ${qtd} título(s) lançado(s) no A Receber, somando ${fmtBRL(total)}.`) }} />
