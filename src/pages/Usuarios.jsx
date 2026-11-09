@@ -147,7 +147,7 @@ export default function Usuarios() {
         <form onSubmit={criarUsuario}>
           <Input label="Nome completo *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="João Silva" required />
           <Input label="E-mail *" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="joao@escritorio.com" required />
-          <Input label="Senha inicial *" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Mínimo 6 caracteres" required minLength={6} />
+          <Input label="Senha inicial *" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Mínimo 10 caracteres, com letras e números" required minLength={10} pattern="(?=.*[A-Za-z])(?=.*\d).{10,}" title="Use pelo menos 10 caracteres, com letras e números" />
           <Select label="Função *" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
             <option value="user">Usuário — somente leitura e tarefas básicas</option>
             <option value="gerente">Gerente — criar, editar e inativar (sem excluir)</option>

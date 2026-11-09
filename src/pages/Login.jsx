@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Eye, EyeOff } from 'lucide-react'
@@ -14,14 +14,40 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Segurança: trava a tela por um tempo após tentativas erradas seguidas
+  // (o bloqueio de verdade é feito pelo Supabase, que limita tentativas por IP)
+  const [falhas, setFalhas] = useState(() => Number(sessionStorage.getItem('login_falhas') || 0))
+  const [bloqueadoAte, setBloqueadoAte] = useState(() => Number(sessionStorage.getItem('login_bloqueio') || 0))
+  const [agora, setAgora] = useState(Date.now())
+  const restante = Math.max(0, Math.ceil((bloqueadoAte - agora) / 1000))
+  const inatividade = new URLSearchParams(window.location.search).get('motivo') === 'inatividade'
+
+  useEffect(() => {
+    if (!restante) return
+    const t = setInterval(() => setAgora(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [restante])
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (restante) return
     setError('')
     setLoading(true)
     const { error } = await signIn(email, password)
-    if (error) setError('E-mail ou senha inválidos.')
-    else navigate('/')
+    if (error) {
+      const n = falhas + 1
+      setFalhas(n); sessionStorage.setItem('login_falhas', String(n))
+      if (error.status === 429 || /rate|too many/i.test(error.message || '')) {
+        setError('Muitas tentativas. Por segurança, o acesso foi pausado. Aguarde alguns minutos.')
+      } else if (n >= 5) {
+        const ate = Date.now() + Math.min(15, 2 ** (n - 5)) * 60 * 1000
+        setBloqueadoAte(ate); setAgora(Date.now()); sessionStorage.setItem('login_bloqueio', String(ate))
+        setError('Muitas tentativas erradas. Aguarde para tentar de novo.')
+      } else setError(`E-mail ou senha inválidos.${n >= 3 ? ` Restam ${5 - n} tentativa(s) antes de uma pausa.` : ''}`)
+    } else {
+      sessionStorage.removeItem('login_falhas'); sessionStorage.removeItem('login_bloqueio')
+      navigate('/')
+    }
     setLoading(false)
   }
 
@@ -159,6 +185,16 @@ export default function Login() {
               </div>
             </div>
 
+            {inatividade && !error && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#92400e' }}>
+                🔒 Sua sessão foi encerrada por inatividade. Entre de novo.
+              </div>
+            )}
+            {restante > 0 && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#dc2626' }}>
+                ⏳ Tente de novo em {Math.floor(restante / 60)}:{String(restante % 60).padStart(2, '0')}
+              </div>
+            )}
             {error && (
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#dc2626' }}>
                 ⚠ {error}
@@ -166,7 +202,7 @@ export default function Login() {
             )}
 
             <button
-              type="submit" disabled={loading}
+              type="submit" disabled={loading || restante > 0}
               style={{
                 background: loading ? `rgba(201,150,10,0.5)` : `linear-gradient(135deg, ${G} 0%, #8a6500 100%)`,
                 color: loading ? 'rgba(255,255,255,0.6)' : '#0a0b0d',
