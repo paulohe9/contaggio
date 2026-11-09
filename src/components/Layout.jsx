@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -38,6 +38,20 @@ export default function Layout({ children }) {
   const { profile, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+
+  // Segurança: encerra a sessão após 30 minutos sem uso (mouse, teclado ou toque)
+  useEffect(() => {
+    const LIMITE = 30 * 60 * 1000
+    let timer
+    const reiniciar = () => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => { await signOut(); navigate('/login?motivo=inatividade') }, LIMITE)
+    }
+    const eventos = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
+    eventos.forEach(ev => window.addEventListener(ev, reiniciar, { passive: true }))
+    reiniciar()
+    return () => { clearTimeout(timer); eventos.forEach(ev => window.removeEventListener(ev, reiniciar)) }
+  }, [])
   const [collapsed, setCollapsed] = useState(false)
   const [gruposAbertos, setGruposAbertos] = useState({ comercial: true })
 
