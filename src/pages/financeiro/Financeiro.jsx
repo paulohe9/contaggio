@@ -10,6 +10,7 @@ import EmitirNfse from './EmitirNfse'
 import NotasFiscais from './NotasFiscais'
 import LancamentoLote from './LancamentoLote'
 import { CobrarModal, ReguaConfig } from './Cobranca'
+import Conciliacao from './Conciliacao'
 
 const PARCEIROS = ['rayssa', 'paulo', 'rilary']
 const PARCEIRO_COR = { rayssa: '#8b5cf6', paulo: '#3b82f6', rilary: '#f59e0b' }
@@ -56,6 +57,7 @@ export default function Financeiro() {
   const [baixa, setBaixa] = useState(null)              // { t, data_pagamento, bank_account_id }
   const [nfseTitulo, setNfseTitulo] = useState(null)    // título a receber em emissão de NFS-e
   const [notasPorTitulo, setNotasPorTitulo] = useState({})
+  const [pendConc, setPendConc] = useState(0)
   const [loteAberto, setLoteAberto] = useState(false)
   const [cobrar, setCobrar] = useState(null)            // títulos a cobrar pelo WhatsApp
   const [reguaAberta, setReguaAberta] = useState(false)
@@ -97,6 +99,8 @@ export default function Financeiro() {
       if (!atual || n.status === 'autorizada') mapa[n.transaction_id] = n
     }
     setNotasPorTitulo(mapa)
+    const { count: nPend } = await supabase.from('asaas_movimentos').select('id', { count: 'exact', head: true }).in('status', ['novo', 'pendente'])
+    setPendConc(nPend || 0)
     const { data: cobs } = await supabase.from('cobrancas').select('transaction_id, created_at').eq('status', 'enviada').order('created_at', { ascending: false }).limit(1000)
     const ult = {}
     for (const c of cobs || []) if (c.transaction_id && !ult[c.transaction_id]) ult[c.transaction_id] = c.created_at
@@ -300,7 +304,7 @@ export default function Financeiro() {
       month: monthDate, partner: p, amount: Number(distForm[p]), notes: distForm.notes || null
     }))
     for (const u of upserts) {
-      const { error } = await supabase.from('profit_distributions').upsert(u, { onConflict: 'month,partner' })
+      const { error } = await supabase.from('profit_distributions').insert({ ...u, paid_on: u.paid_on || null })
       if (error) { alert('Erro: ' + error.message); setSaving(false); return }
     }
     // Baixa total da conta bancária de origem
@@ -347,8 +351,8 @@ export default function Financeiro() {
     return meses.map(m => {
       const row = { mes: m.slice(5) + '/' + m.slice(0,4) }
       PARCEIROS.forEach(p => {
-        const dist = distributions.find(d => d.month.slice(0,7) === m && d.partner === p)
-        row[p] = dist ? Number(dist.amount) : 0
+        const distItens = distributions.filter(d => d.month.slice(0,7) === m && d.partner === p)
+        row[p] = distItens.reduce((s, d) => s + Number(d.amount), 0)
       })
       return row
     })
@@ -467,6 +471,7 @@ export default function Financeiro() {
     { key: 'receber', label: `A Receber (${indR.abertos.length})`, icon: '📥' },
     { key: 'pagar', label: `A Pagar (${indP.abertos.length})`, icon: '📤' },
     { key: 'notas', label: 'Notas fiscais', icon: '🧾' },
+    { key: 'conciliacao', label: pendConc ? `Conciliação (${pendConc})` : 'Conciliação', icon: '🔁' },
     { key: 'contas', label: `Contas (${contas.length})`, icon: '🏦' },
     { key: 'reserva', label: 'Reserva', icon: '🐷' },
     { key: 'distribuicao', label: 'Distribuição', icon: '💰' },
@@ -764,6 +769,9 @@ export default function Financeiro() {
       {/* ─── NOTAS FISCAIS ─── */}
       {tab === 'notas' && <NotasFiscais />}
 
+
+      {/* ─── CONCILIAÇÃO (extrato do Asaas) ─── */}
+      {tab === 'conciliacao' && <Conciliacao contas={contas} clientes={clientes} transacoes={transacoes} onMudou={fetchTudo} />}
       {/* ─── A PAGAR ─── */}
       {tab === 'pagar' && (
         <div>
@@ -871,7 +879,8 @@ export default function Financeiro() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
             {PARCEIROS.map(p => {
               const total = distributions.filter(d => d.partner === p).reduce((s,d) => s + Number(d.amount), 0)
-              const mesMes = distributions.find(d => d.partner === p && d.month.slice(0,7) === new Date().toISOString().slice(0,7))
+              const mesMesItens = distributions.filter(d => d.partner === p && d.month.slice(0,7) === new Date().toISOString().slice(0,7))
+              const mesMes = mesMesItens.length ? { amount: mesMesItens.reduce((s, d) => s + Number(d.amount), 0) } : null
               return (
                 <div key={p} style={{ background: 'white', borderRadius: 16, border: `2px solid ${PARCEIRO_COR[p]}33`, padding: 20 }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
@@ -931,7 +940,8 @@ export default function Financeiro() {
                     </div>
                     <div style={{ display: 'flex', gap: 10 }}>
                       {PARCEIROS.map(p => {
-                        const d = distMes.find(x => x.partner === p)
+                        const itensP = distMes.filter(x => x.partner === p)
+                        const d = itensP.length ? { amount: itensP.reduce((s, x) => s + Number(x.amount), 0), n: itensP.length } : null
                         return d ? (
                           <div key={p} style={{ background: PARCEIRO_COR[p] + '11', border: `1px solid ${PARCEIRO_COR[p]}33`, borderRadius: 8, padding: '6px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
                             <span style={{ fontWeight: 700, color: PARCEIRO_COR[p], fontSize: 12 }}>{PARCEIRO_LABEL[p]}</span>
