@@ -8,7 +8,7 @@ import ClienteForm from './pages/clientes/ClienteForm'
 import ClienteDetalhe from './pages/clientes/ClienteDetalhe'
 import Financeiro from './pages/financeiro/Financeiro'
 import Obrigacoes from './pages/obrigacoes/Obrigacoes'
-import Legalizacao from './pages/legalizacao/Legalizacao'
+import Legalizacao from './pages/legalizacao/LegalizacaoHub'
 import Solicitacoes from './pages/solicitacoes/Solicitacoes'
 import Usuarios from './pages/Usuarios'
 import AcessoEmail from './pages/AcessoEmail'
@@ -16,6 +16,7 @@ import Relatorios from './pages/relatorios/Relatorios'
 import Funil from './pages/comercial/Funil'
 import Documentos from './pages/documentos/Documentos'
 import PortalCliente from './pages/PortalCliente'
+import AberturaPublica from './pages/AberturaPublica'
 import Comissionadores from './pages/comercial/Comissionadores'
 import DocumentoComercial from './pages/comercial/DocumentoComercial'
 
@@ -35,6 +36,8 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/acesso/:token" element={<AcessoEmail />} />
       <Route path="/portal/:token" element={<PortalCliente />} />
+      <Route path="/abertura" element={<AberturaPublica />} />
+      <Route path="/abertura/:token" element={<AberturaPublica />} />
       <Route path="/comercial/documento/:id" element={<PrivateRoute><DocumentoComercial /></PrivateRoute>} />
       <Route path="/*" element={
         <PrivateRoute>
