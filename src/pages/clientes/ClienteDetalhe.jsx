@@ -134,7 +134,8 @@ export default function ClienteDetalhe() {
         </div>
         {canEdit && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <Link to={`/clientes/${id}/editar`}><Btn variant="secondary" size="sm"><Edit2 size={13} /> Editar</Btn></Link>
+            <Link to={`/clientes/${id}/contrato`}><Btn variant="secondary" size="sm">📄 Contrato</Btn></Link>
+<Link to={`/clientes/${id}/editar`}><Btn variant="secondary" size="sm"><Edit2 size={13} /> Editar</Btn></Link>
             {cliente.status === 'ativo' && <Btn variant="danger" size="sm" onClick={inativar}><UserMinus size={13} /> Inativar</Btn>}
           </div>
         )}
