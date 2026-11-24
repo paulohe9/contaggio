@@ -40,6 +40,7 @@ function AppRoutes() {
       <Route path="/abertura" element={<AberturaPublica />} />
       <Route path="/abertura/:token" element={<AberturaPublica />} />
       <Route path="/comercial/documento/:id" element={<PrivateRoute><DocumentoComercial /></PrivateRoute>} />
+      <Route path="/clientes/:id/contrato" element={<PrivateRoute><ContratoCliente /></PrivateRoute>} />
       <Route path="/*" element={
         <PrivateRoute>
           <Layout>
@@ -49,7 +50,6 @@ function AppRoutes() {
               <Route path="/clientes/novo" element={<ClienteForm />} />
               <Route path="/clientes/:id" element={<ClienteDetalhe />} />
               <Route path="/clientes/:id/editar" element={<ClienteForm />} />
-              <Route path="/clientes/:id/contrato" element={<ContratoCliente />} />
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/obrigacoes" element={<Obrigacoes />} />
               <Route path="/legalizacao" element={<Legalizacao />} />
