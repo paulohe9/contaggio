@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Clientes from './pages/clientes/Clientes'
 import ClienteForm from './pages/clientes/ClienteForm'
 import ClienteDetalhe from './pages/clientes/ClienteDetalhe'
+import ContratoCliente from './pages/clientes/ContratoCliente'
 import Financeiro from './pages/financeiro/Financeiro'
 import Obrigacoes from './pages/obrigacoes/Obrigacoes'
 import Legalizacao from './pages/legalizacao/LegalizacaoHub'
@@ -48,6 +49,7 @@ function AppRoutes() {
               <Route path="/clientes/novo" element={<ClienteForm />} />
               <Route path="/clientes/:id" element={<ClienteDetalhe />} />
               <Route path="/clientes/:id/editar" element={<ClienteForm />} />
+              <Route path="/clientes/:id/contrato" element={<ContratoCliente />} />
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/obrigacoes" element={<Obrigacoes />} />
               <Route path="/legalizacao" element={<Legalizacao />} />
