@@ -11,8 +11,8 @@ const btn = { background: 'transparent', color: 'white', border: '1px solid rgba
 const CAMPOS = [
   ['Contratante', [['contratante_nome', 'Nome / Razão social'], ['contratante_documento_tipo', 'Tipo (CPF/CNPJ)'], ['contratante_documento', 'CPF / CNPJ'], ['contratante_endereco', 'Endereço', 'wide'], ['contratante_representante', 'Representante (se PJ)', 'wide'], ['contratante_enquadramento', 'Enquadramento', 'wide']]],
   ['Serviços (um por linha)', [['lista_servicos', '', 'area']]],
-  ['Honorários', [['valor_honorarios', 'Valor mensal (R$)'], ['dia_vencimento', 'Dia do vencimento'], ['multa_atraso_percentual', 'Multa por atraso (%)'], ['juros_atraso_percentual', 'Juros ao mês (%)'], ['mes_reajuste', 'Mês do reajuste'], ['dia_envio_folha', 'Dia limite folha']]],
-  ['Vigência e rescisão', [['vigencia_inicio', 'Início', 'date'], ['vigencia_fim', 'Fim', 'date'], ['aviso_previo_dias', 'Aviso prévio (dias)'], ['inadimplencia_dias', 'Inadimplência (dias)'], ['multa_compensatoria', 'Multa rescisão sem motivo', 'wide'], ['multa_descumprimento', 'Multa por descumprimento', 'wide']]],
+  ['Honorários', [['valor_honorarios', 'Valor mensal (R$)'], ['dia_vencimento', 'Dia do vencimento'], ['multa_atraso_percentual', 'Multa por atraso (%)'], ['juros_atraso_percentual', 'Juros ao mês (%)'], ['mes_reajuste', 'Mês do reajuste'], ['dia_envio_folha', 'Dia limite folha'], ['incluir_13', 'Cobrar 13º honorário (cliente com empregados)', 'check']]],
+  ['Vigência e rescisão', [['vigencia_inicio', 'Início (prazo indeterminado)', 'date'], ['aviso_previo_dias', 'Aviso prévio (dias)'], ['inadimplencia_dias', 'Inadimplência (dias)'], ['multa_descumprimento', 'Multa por descumprimento', 'wide']]],
   ['Assinatura', [['cidade_assinatura', 'Cidade'], ['data_assinatura', 'Data (por extenso)']]],
 ]
 
@@ -97,11 +97,13 @@ export default function ContratoCliente() {
               <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{titulo}</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {campos.map(([k, label, tipo]) => (
-                  <div key={k} style={{ gridColumn: tipo === 'wide' || tipo === 'area' ? '1 / -1' : 'auto' }}>
-                    {label && <label style={{ display: 'block', fontSize: 10.5, color: '#64748b', marginBottom: 2 }}>{label}</label>}
+                  <div key={k} style={{ gridColumn: tipo === 'wide' || tipo === 'area' || tipo === 'check' ? '1 / -1' : 'auto' }}>
+                    {label && tipo !== 'check' && <label style={{ display: 'block', fontSize: 10.5, color: '#64748b', marginBottom: 2 }}>{label}</label>}
                     {tipo === 'area'
                       ? <textarea rows={6} value={f[k]} onChange={e => setF(s => ({ ...s, [k]: e.target.value }))} style={inp} />
-                      : <input type={tipo === 'date' ? 'date' : 'text'} value={f[k]} onChange={e => setF(s => ({ ...s, [k]: e.target.value }))} style={inp} />}
+                      : tipo === 'check'
+                        ? <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: '#1e293b', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}><input type="checkbox" checked={!!f[k]} onChange={e => setF(s => ({ ...s, [k]: e.target.checked }))} />{label}</label>
+                        : <input type={tipo === 'date' ? 'date' : 'text'} value={f[k]} onChange={e => setF(s => ({ ...s, [k]: e.target.value }))} style={inp} />}
                   </div>
                 ))}
               </div>
