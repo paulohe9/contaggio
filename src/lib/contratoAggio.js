@@ -10,7 +10,7 @@ export const CONTRATADA = {
   representante: 'RAYSSA KAWANNE DOS SANTOS',
   cpf: '065.627.044-64',
   crcResponsavel: 'CRC-AL nº 009643',
-  crcEmpresa: '', // ex.: 'CRC-AL nº 000000/O' — preencher para constar no contrato
+  crcEmpresa: 'CRC nº AL-002050/O',
   whatsapp: '(82) 9.8726-9658',
   instagram: '@aggiocontabil',
   email: 'aggiocontabil@gmail.com',
@@ -34,9 +34,8 @@ export function enquadramentoDe(c) {
 
 export function camposIniciais(c) {
   const hoje = new Date()
-  const iso = (d) => d.toISOString().slice(0, 10)
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const ini = c.data_entrada || iso(hoje)
-  const fim = new Date(ini + 'T12:00:00'); fim.setFullYear(fim.getFullYear() + 1)
   const dig = (c.cnpj || '').replace(/\D/g, '')
   return {
     contratante_nome: c.razao_social || '',
@@ -52,11 +51,10 @@ export function camposIniciais(c) {
     multa_atraso_percentual: '2',
     juros_atraso_percentual: '1',
     mes_reajuste: 'janeiro',
+    incluir_13: false,
     vigencia_inicio: ini,
-    vigencia_fim: iso(fim),
     aviso_previo_dias: '30',
     inadimplencia_dias: '60',
-    multa_compensatoria: '1 (um) honorário mensal',
     multa_descumprimento: '1 (um) honorário mensal',
     cidade_assinatura: 'Arapiraca/AL',
     data_assinatura: dataExtenso(),
@@ -76,10 +74,11 @@ export function textoContrato(f) {
     valor_honorarios: f.valor_honorarios ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(f.valor_honorarios)) : '[valor]',
     valor_honorarios_extenso: f.valor_honorarios ? valorPorExtenso(f.valor_honorarios) : '[valor por extenso]',
     vigencia_inicio: dataBR(f.vigencia_inicio),
-    vigencia_fim: dataBR(f.vigencia_fim),
     aviso_previo_dias_extenso: ext(f.aviso_previo_dias),
     inadimplencia_dias_extenso: ext(f.inadimplencia_dias),
     contratada_email: C.email,
+    bloco_decimo: f.incluir_13 ? '4.2.3. A CONTRATANTE que possuir empregados e, por consequência, folha de pagamento de 13º salário, pagará, ainda, o 13º honorário anual, no valor integral de 1 (um) honorário mensal vigente, com vencimento até o dia 20 de dezembro de cada ano.\n\n4.2.3.1. O 13º honorário é devido pelo valor integral, sem proporcionalidade, para a CONTRATANTE cujo vínculo se inicie até a competência de junho (06) do ano corrente. Para vínculos iniciados após essa competência, o 13º honorário somente será devido a partir do ano seguinte.' : '',
+    num_parametros: f.incluir_13 ? '4.2.4' : '4.2.3',
   }
   const corpo = preencherModelo(CORPO, dados)
   const ass = `${f.cidade_assinatura}, ${f.data_assinatura}.
@@ -167,7 +166,9 @@ Os serviços serão executados nas dependências da CONTRATADA, em obediência �
 
 4.2.2. Os honorários serão reajustados anualmente, mediante negociação, no mês de {{mes_reajuste}}.
 
-4.2.3. Os parâmetros de fixação para o reajuste terão como base:
+{{bloco_decimo}}
+
+{{num_parametros}}. Os parâmetros de fixação para o reajuste terão como base:
 
 - quantidade de funcionários;
 - quantidade de notas fiscais (entrada/saída);
@@ -187,7 +188,8 @@ Os serviços serão executados nas dependências da CONTRATADA, em obediência �
 - cadastro IBAMA, quando for o caso;
 - recálculos (vários consecutivos);
 - revisão de tributação, bem como solicitação de restituição e compensação de tributos;
-- cálculos periciais.
+- cálculos periciais;
+- escrituração, cálculos e demais serviços contábeis decorrentes de processos trabalhistas, caso ocorram, com valor informado previamente à CONTRATANTE.
 
 4.4. Em caso de inadimplência, será enviada Carta de Cobrança à CONTRATANTE, pela qual será realizado o pedido de quitação de qualquer dívida com a CONTRATADA em relação aos serviços aqui mencionados. Não havendo a quitação, a CONTRATANTE fica ciente de que a carta é apresentada também como aviso extrajudicial de protesto junto ao Cartório competente.
 
@@ -195,7 +197,7 @@ Os serviços serão executados nas dependências da CONTRATADA, em obediência �
 
 ## 5. - DA VIGÊNCIA E RESCISÃO
 
-5.1. O presente Contrato vigorará de {{vigencia_inicio}} a {{vigencia_fim}}, considerando-se renovado automaticamente por igual período caso não haja manifestação de distrato entre as Partes.
+5.1. O presente Contrato vigora por prazo indeterminado, a partir de {{vigencia_inicio}}, podendo ser rescindido por qualquer das Partes nos termos desta Cláusula.
 
 5.2. O presente Contrato poderá ser rescindido por qualquer das Partes, mediante comunicação prévia e escrita, observando-se as disposições abaixo:
 
@@ -213,7 +215,7 @@ d) inadimplemento financeiro superior a {{inadimplencia_dias}} ({{inadimplencia_
 
 e) violação de normas legais, regulatórias ou éticas relacionadas ao objeto do Contrato.
 
-III – **Da multa rescisória compensatória (rescisão imotivada):** será devida nas hipóteses de rescisão imotivada promovida por qualquer das Partes, correspondendo ao valor de {{multa_compensatoria}}, vigente à época da rescisão.
+III – **Ausência de multa na rescisão imotivada:** a rescisão imotivada, promovida por qualquer das Partes e observado o aviso prévio previsto no inciso I, não ensejará multa rescisória.
 
 IV – **Da multa por descumprimento contratual (rescisão motivada):** na hipótese de rescisão motivada causada por infração contratual de uma das Partes, a Parte infratora ficará sujeita ao pagamento de multa contratual correspondente a {{multa_descumprimento}}, sem prejuízo de perdas e danos eventualmente comprovados.
 
